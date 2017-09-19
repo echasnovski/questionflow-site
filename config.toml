@@ -1,20 +1,24 @@
-baseURL = "http://example.com/"
+baseURL = "/"
 languageCode = "en-us"
-title = "Minimal"
+title = "QuestionFlow"
 theme = "minimal"
-disqusShortname = "username" # delete this to disable disqus comments
 
 [params]
-    author = "Calin Tataru"
-    description = "Personal blog theme powered by Hugo"
-    githubUsername = "#"
-    accent = "red"
-    showBorder = true
-    backgroundColor = "white"
-    font = "Raleway" # should match the name on Google Fonts!
+    author = "Evgeni Chasnovski"
+    description = "Analysis workflow powered by questions"
+    githubUsername = "echasnovski"
+    accent = "black"
+    showBorder = false
+    backgroundColor = "#f6f6ff"
+    font = "Arial" # should match the name on Google Fonts!
     highlight = true
-    highlightStyle = "solarized-dark"
-    highlightLanguages = ["go", "haskell", "kotlin", "scala", "swift"]
+    highlightStyle = "idea"
+    highlightLanguages = ["r", "yaml"]
+    
+    ignoreFiles = ["\\.Rmd$", "\\.Rmarkdown$", "_files$", "_cache$"]
+    
+[permalinks]
+    post = "/:year/:month/:day/:slug/"
 
 [[menu.main]]
     url = "/"
@@ -36,26 +40,21 @@ disqusShortname = "username" # delete this to disable disqus comments
 # The list of available icons can be found at http://fontawesome.io/icons/
 
 [[menu.icon]]
-    url = "mailto:me@example.com"
+    url = "mailto:evgeni.chasnovski@gmail.com"
     name = "envelope-o"
     weight = 1
 
 [[menu.icon]]
-    url = "https://github.com/username/"
+    url = "https://github.com/echasnovski/"
     name = "github"
     weight = 2
 
 [[menu.icon]]
-    url = "https://twitter.com/username/"
+    url = "https://twitter.com/echasnovski/"
     name = "twitter"
     weight = 3
 
 [[menu.icon]]
-    url = "https://www.linkedin.com/in/username/"
-    name = "linkedin"
-    weight = 4
-
-[[menu.icon]]
-    url = "https://www.stackoverflow.com/username/"
+    url = "https://www.stackoverflow.com/users/7360839/echasnovski"
     name = "stack-overflow"
-    weight = 5
+    weight = 4
