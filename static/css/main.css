@@ -70,7 +70,7 @@ a:hover {
 
 .item-tag {
     background-color: var(--accent);
-    font-weight: 600;
+    font-weight: bold;
 }
 
 /*navigation bar icons*/
@@ -78,6 +78,12 @@ a:hover {
 .navbar-icon {
     font-size: 125%;
     display: inline-block !important;
+}
+
+/*site title*/
+.site-title {
+    font-family: var(--titleFont);
+    color: var(--titleColor);
 }
 
 /*coloured borders at top and bottom of the page*/
