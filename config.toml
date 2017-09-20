@@ -15,6 +15,7 @@ theme = "minimal"
     highlightStyle = "idea"
     highlightLanguages = ["r", "yaml"]
     
+    paginate = 2
     ignoreFiles = ["\\.Rmd$", "\\.Rmarkdown$", "_files$", "_cache$"]
     
 [permalinks]
