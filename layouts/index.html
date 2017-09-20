@@ -1,0 +1,17 @@
+{{ partial "header" . }}
+
+<main>
+
+    <div class="intro">
+        <h1 class = "site-title">{{ .Site.Title }}</h1>
+    </div>
+    
+    <h2 class="page-header"> Recent posts </h2>
+    
+    {{ range first 5 (where .Data.Pages "Section" "post").ByDate.Reverse }}
+      {{ partial "list-item" . }}
+    {{ end }}
+
+</main>
+
+{{ partial "footer" . }}

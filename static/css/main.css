@@ -3,7 +3,7 @@ html, body {
 }
 
 body {
-    padding-top: 55px;
+    padding-top: 40px;
     display: flex;
     text-align: center;
     flex-direction: column;
@@ -14,6 +14,7 @@ main {
     padding: 25px;
     flex: 1 0 auto;
     max-width: 750px;
+    font-size: 13pt;
 }
 
 /*footer*/
@@ -25,17 +26,16 @@ main {
 /*home page*/
 
 .intro {
-    margin: 25vh 0;
+
 }
 
 .intro > h1 {
-    color: #212121;
-    font-size: 12vh;
+    font-size: 6vmin;
 }
 
 .intro > h2 {
     color: #757575;
-    font-size: 3vmin;
+    font-size: 2vmin;
 }
 
 /*apply accent colour to links*/
