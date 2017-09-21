@@ -25,17 +25,8 @@ main {
 
 /*home page*/
 
-.intro {
-
-}
-
 .intro > h1 {
     font-size: 6vmin;
-}
-
-.intro > h2 {
-    color: #757575;
-    font-size: 2vmin;
 }
 
 /*apply accent colour to links*/
@@ -74,10 +65,30 @@ a:hover {
     font-weight: bold;
 }
 
-/*navigation bar icons*/
+/*navigation bar*/
+
+  /* Colour of navigation bar */
+.navbar-default {
+    background-color: #efffff;
+}
+
+  /* Colour of button at small pages */
+.navbar-default .navbar-toggle {
+    background-color: #e7ffff;
+}
+
+  /* Colour of button with focus */
+.navbar-default .navbar-toggle:hover,
+.navbar-default .navbar-toggle:focus {
+    background-color: #d7ffff;
+}
+
+.navbar-brand,
+.navbar-nav {
+    font-size: 125%;
+}
 
 .navbar-icon {
-    font-size: 125%;
     display: inline-block !important;
 }
 
