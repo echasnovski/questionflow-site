@@ -1,0 +1,3 @@
+{{ if not .Date.IsZero }} <p> {{ .Date.Format "2006-01-02" }} </p> {{ end }}
+
+<p> {{ range .Params.tags }} <kbd class="item-tag">{{ . }}</kbd> {{ end }} </p>

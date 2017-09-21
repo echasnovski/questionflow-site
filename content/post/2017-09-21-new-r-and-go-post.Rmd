@@ -1,0 +1,13 @@
+---
+title: New R and Go Post
+author: Evgeni Chasnovski
+date: '2017-09-21'
+slug: new-r-and-go-post
+categories: []
+tags:
+  - R Markdown
+  - go
+description: This is some description.
+---
+
+Some post text. Even __markdown__ _features_ with $ LaTeX $ are included.

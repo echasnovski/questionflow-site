@@ -6,7 +6,9 @@
 
       <h1><b>{{ .Title }}</b></h1>
       
-      {{ partial "annotation" . }}
+      {{ partial "item-metainfo" . }}
+      
+      <p class="text-justify">{{ .Description | markdownify}}</p>
 
     </div>
 
@@ -19,10 +21,17 @@
 
         <h4 class="page-header">Related</h4>
 
-        {{ range $related }} {{ partial "list-item" . }} {{ end }}
+        {{ range $related }}
+        
+          <h4><a href={{ .RelPermalink }}>{{ .Title }}</a></h4>
+          
+          {{ partial "item-metainfo" . }}
+        
+        {{ end }}
 
     {{ end }}
 
+    <!-- disqus comments -->
     {{ if and .Site.DisqusShortname (not .Params.disableComments) }}
 
         <h4 class="page-header">Comments</h4>
