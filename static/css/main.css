@@ -130,3 +130,16 @@ img {
 #sharing a.twitter {
   background: #4fafed;
 }
+
+/* Highlight.js style*/
+
+pre {
+  background-color: #ffffff;
+  border-color: #000000;
+  border-width: 1px;
+}
+
+.hljs-comment {
+  color: #404080;
+  font-style: normal;
+}

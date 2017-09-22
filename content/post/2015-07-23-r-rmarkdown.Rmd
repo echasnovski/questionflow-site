@@ -23,6 +23,8 @@ You can embed an R code chunk like this:
 
 ```{r cars}
 summary(cars)
+
+# This is some commentary
 fit <- lm(dist ~ speed, data = cars)
 fit
 ```
@@ -40,3 +42,4 @@ pie(
   init.angle = -50, border = NA
 )
 ```
+
