@@ -14,7 +14,8 @@ ignoreFiles = ["\\.Rmd$", "\\.Rmarkdown$", "_files$", "_cache$"]
     font = "Ubuntu" # should match the name on Google Fonts!
     highlight = true
     highlightStyle = "idea"
-    highlightLanguages = ["r", "yaml"]
+    highlightLanguages = ["yaml"]
+    js = ["/js/custom.r.min.js"]
     
     titleFont = "MathJax_AMS"
     titleColor = "#000000"

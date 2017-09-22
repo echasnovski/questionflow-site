@@ -51,4 +51,15 @@ pie(
 Figure 1: A fancy pie chart.
 </p>
 </div>
+<p>Different kinds of parameters to check new highlighting:</p>
+<pre class="r"><code># This is comment with sign =
+x &lt;- lm(formula = vs ~ am, data= mtcars)
+y &lt;- &quot;String with sign = &quot;
+
+my_fun &lt;- function(x = 10, y_1=1, z_.2a = 10, ...) {
+  &quot;It works!&quot;
+}
+
+# Bad style assignment should be avoided
+z = 10</code></pre>
 </div>

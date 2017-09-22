@@ -43,3 +43,18 @@ pie(
 )
 ```
 
+Different kinds of parameters to check new highlighting:
+
+```{r Paramter highlighting}
+# This is comment with sign =
+x <- lm(formula = vs ~ am, data= mtcars)
+y <- "String with sign = "
+
+my_fun <- function(x = 10, y_1=1, z_.2a = 10, ...) {
+  "It works!"
+}
+
+# Bad style assignment should be avoided
+z = 10
+```
+

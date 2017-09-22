@@ -143,3 +143,11 @@ pre {
   color: #404080;
   font-style: normal;
 }
+
+.hljs-fun-param {
+  color: #ff4000;
+}
+
+.hljs-pipe {
+  font-weight: bold;
+}
