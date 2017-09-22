@@ -26,7 +26,7 @@ main {
 /*home page*/
 
 .intro > h1 {
-    font-size: 6vmin;
+    font-size: calc(3vmin + 32px);
 }
 
 /*apply accent colour to links*/
