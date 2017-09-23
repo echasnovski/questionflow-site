@@ -14,7 +14,13 @@
 
     <div class="text-justify">{{ .Content }}</div>
     
-    <br> {{ partial "share" .}}
+    <br>
+    <div class="after-content">
+      <div class="after-content-cell"></div>
+      <div class="after-content-cell after-content-sharing" id="sharing"> {{ partial "share" .}} </div>
+      <div class="after-content-cell after-content-to-top"> {{ partial "jump-to-top" .}} </div>
+    </div>
+    
 
     <!-- related posts with the same tags -->
     {{ $related := first 3 (where (where (where .Site.Pages.ByDate.Reverse ".Type" "==" "post") ".Params.tags" "intersect" .Params.tags) "Permalink" "!=" .Permalink) }}
