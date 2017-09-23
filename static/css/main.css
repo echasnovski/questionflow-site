@@ -121,37 +121,28 @@ img {
 
 .after-content-cell {
     display: table-cell;
-    width: 33%;
+    width: 25%;
     vertical-align: middle;
 }
 
-.after-content-sharing {
-    text-align: center;
-}
-
-.after-content-to-top {
-    text-align: right;
-    color: var(--accent);
+.after-content-sharing a {
     font-size: 36px;
-}
-
-/* Sharing */
-
-#sharing a {
-    font-size: 16px;
     font-weight: bold;
     color: #fff;
     padding: 6px 10px;
-    border-radius: 4px;
-    margin-left: 2px;
+    border-radius: 10px;
 }
 
-#sharing a.facebook {
-    background: #4361b3;
-}
+#twitter-cell {text-align: right;}
+#twitter-cell a {background: #4fafed; margin-right: 5px;}
 
-#sharing a.twitter {
-    background: #4fafed;
+#facebook-cell {text-align: left;}
+#facebook-cell a {background: #4361b3; margin-left: 5px;}
+
+#jump-to-top {
+    font-size: 36px;
+    text-align: right;
+    color: var(--accent);
 }
 
 /* Highlight.js style*/

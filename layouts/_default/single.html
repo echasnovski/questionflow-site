@@ -17,8 +17,8 @@
     <br>
     <div class="after-content">
       <div class="after-content-cell"></div>
-      <div class="after-content-cell after-content-sharing" id="sharing"> {{ partial "share" .}} </div>
-      <div class="after-content-cell after-content-to-top"> {{ partial "jump-to-top" .}} </div>
+      {{ partial "share" .}}
+      <div class="after-content-cell" id="jump-to-top"> {{ partial "jump-to-top" .}} </div>
     </div>
     
     <!-- related posts with the same tags -->
