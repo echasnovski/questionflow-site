@@ -8,21 +8,20 @@
         <!-- at least one header to link to -->
         {{ $has_headers := ge (len $headers) 1 }}
         {{ if $has_headers }}
-            {{ range $headers }}
-                {{ $header := . }}
-                {{ range first 1 (findRE "<h[1-2]" $header 1) }}
-                  {{ range findRE "[1-2]" . 1 }}
-                      {{ $head_level := (int .) }}
-                      {{ $base := ($.Page.File.LogicalName) }}
-                      {{ $anchorId := replaceRE "\\." "" $header }}
-                      {{ $anchorId := ($anchorId | plainify | htmlEscape | urlize | safeURL) }}
-                      {{ $href := delimit (slice $base $anchorId) "#" | string }}
-                      <li><a href="{{ relref $.Page $href }}" class="toc-h{{ $head_level }}">
-                          {{ $header | plainify | htmlEscape }}
-                      </a></li>
-                    {{end}}
-                {{end}}
-            {{ end }}
+          {{ range $headers }}
+            {{ $header := . }}
+            {{ range first 1 (findRE "<h[1-2]" $header 1) }}
+              {{ range findRE "[1-2]" . 1 }}
+                {{ $head_level := (int .) }}
+                {{ $base := ($.Page.File.LogicalName) }}
+                {{ $anchorId := replaceRE "\\." "" $header }}
+                {{ $anchorId := ($anchorId | plainify | htmlEscape | urlize | safeURL) }}
+                <li><a href="#{{ $anchorId }}" class="toc-h{{ $head_level }}">
+                    {{ $header | plainify | htmlEscape }}
+                </a></li>
+              {{end}}
+            {{end}}
+          {{ end }}
         {{ end }}
       </ul>
     </div>
