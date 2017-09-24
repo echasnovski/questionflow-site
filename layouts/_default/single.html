@@ -1,6 +1,8 @@
 {{ partial "header" . }}
 
-<main>
+<div class="content-wrapper">
+  
+<main class="col-md-9">
 
     <div>
 
@@ -48,5 +50,9 @@
     {{ end }}
 
 </main>
+
+{{ partial "table-of-contents" .}}
+
+</div>
 
 {{ partial "footer" . }}

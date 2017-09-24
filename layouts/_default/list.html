@@ -1,5 +1,6 @@
 {{ partial "header" . }}
 
+<div class="content-wrapper">
 <main>
 
     {{ range .Paginator.Pages }}
@@ -7,6 +8,8 @@
     {{ end }}
 
 </main>
+
+</div>
 
 {{ partial "paginator" . }}
 

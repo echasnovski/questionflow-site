@@ -1,0 +1,30 @@
+{{ if .Params.toc | default true}}
+  <div class="col-md-3 hidden-xs hidden-sm" id="sidebar-wrapper">
+    <div id="sidebar">
+      <h2>Contents</h2>
+      <ul class="nav nav-pills nav-stacked">
+         <!-- ignore empty links with + -->
+        {{ $headers := findRE "<h[1-2].*?>(.|\n])+?</h[1-2]>" .Content }}
+        <!-- at least one header to link to -->
+        {{ $has_headers := ge (len $headers) 1 }}
+        {{ if $has_headers }}
+            {{ range $headers }}
+                {{ $header := . }}
+                {{ range first 1 (findRE "<h[1-2]" $header 1) }}
+                  {{ range findRE "[1-2]" . 1 }}
+                      {{ $head_level := (int .) }}
+                      {{ $base := ($.Page.File.LogicalName) }}
+                      {{ $anchorId := replaceRE "\\." "" $header }}
+                      {{ $anchorId := ($anchorId | plainify | htmlEscape | urlize | safeURL) }}
+                      {{ $href := delimit (slice $base $anchorId) "#" | string }}
+                      <li><a href="{{ relref $.Page $href }}" class="toc-h{{ $head_level }}">
+                          {{ $header | plainify | htmlEscape }}
+                      </a></li>
+                    {{end}}
+                {{end}}
+            {{ end }}
+        {{ end }}
+      </ul>
+    </div>
+  </div>
+{{end}}

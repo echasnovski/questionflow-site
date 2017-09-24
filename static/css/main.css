@@ -3,25 +3,44 @@ html, body {
 }
 
 body {
-    padding-top: 40px;
     display: flex;
-    text-align: center;
     flex-direction: column;
+    padding-top: 40px;
+    text-align: center;
+}
+
+.content-wrapper {
+    display: flex;
+    justify-content: center;
+    flex: 1 0 auto
 }
 
 main {
-    margin: auto;
     padding: 25px;
-    flex: 1 0 auto;
+    min-width: 300px;
     max-width: 750px;
     font-size: 13pt;
 }
 
-/*footer*/
+/* Contents sidebar */
+#sidebar-wrapper {
+    max-width: 250px;
+}
+
+#sidebar {
+    position: fixed;
+    top: 40px;
+}
+
+/* Footer */
 
 .copyright {
-    margin: 15px 0;
+    flex: 0 0 auto;
+    text-align: center;
 }
+
+.toc-h1 {font-size: 22px;}
+.toc-h2 {font-size: 18px;}
 
 /*home page*/
 
