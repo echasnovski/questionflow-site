@@ -1,0 +1,21 @@
+{{ partial "header" . }}
+
+<div class="content-wrapper">
+  
+<main class="col-md-9">
+
+    <div>
+
+      <h1><b>{{ .Title }}</b></h1>
+      
+      <p class="text-justify">{{ .Description | markdownify}}</p>
+
+    </div>
+
+    <div class="contents text-justify">{{ .Content }}</div>
+
+</main>
+
+</div>
+
+{{ partial "footer" . }}
