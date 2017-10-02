@@ -181,25 +181,25 @@ pre {
     color: #ff4000;
 }
 
-.hljs-pipe {
+.hljs-pipe, .hljs-assign {
     font-weight: bold;
 }
 
 /* Fixes for fixed navbar */
 
 .contents h1, .contents h2, .contents h3, .contents h4 {
-  padding-top: 55px;
-  margin-top: -55px;
+    padding-top: 55px;
+    margin-top: -55px;
 }
 
 /* Static header placement on mobile devices */
   
 @media (max-height: 740px) {
   .navbar-fixed-top {
-    position: absolute;
+      position: absolute;
   }
   .contents h1, .contents h2, .contents h3, .contents h4 {
-  padding-top: 0px;
-  margin-top: 0px;
+      padding-top: 0px;
+      margin-top: 0px;
   }
 }
