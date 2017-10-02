@@ -113,8 +113,8 @@ a:hover {
 
 /*site title*/
 .site-title {
-    font-family: var(--titleFont);
-    color: var(--titleColor);
+    font-family: "MathJax_AMS";
+    color: #000000;
 }
 
 /*coloured borders at top and bottom of the page*/

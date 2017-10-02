@@ -18,9 +18,6 @@ GoogleAnalytics = "UA-107291782-1"
     highlightLanguages = ["yaml"]
     js = ["/js/custom.r.min.js"]
     
-    titleFont = "MathJax_AMS"
-    titleColor = "#000000"
-    
     paginate = 10
     
 [permalinks]
