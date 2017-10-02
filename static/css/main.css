@@ -32,6 +32,11 @@ main {
     top: 40px;
 }
 
+.nav-stacked>li>a {
+    padding: 5px;
+    text-align: left;
+}
+
 /* Footer */
 
 .copyright {
