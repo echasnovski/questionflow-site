@@ -18,18 +18,18 @@ description: "The story of QuestionFlow origins."
 <div id="introduction" class="section level2">
 <h2>Introduction</h2>
 <p>My name is Evgeni and I am a mathematician with strong passion for data analysis and <a href="https://www.r-project.org/">R</a>.</p>
-<p>The first experience in the field came to me in the early 2013 (in the middle of my university graduate year). I decided to take a “Data Analysis” course at Coursera (taught by amazing <a href="http://jtleek.com/">Jeff Leek</a>) which later transformed into <a href="https://www.coursera.org/specializations/jhu-data-science">Data Science Specialization</a> from John Hopkins University. After watching some videos it came to me that knowledge of some weird programming language called R is needed in order to complete the course. That insight led me to another Coursera course “Computing for Data Analysis” (offered by no less amazing <a href="http://www.biostat.jhsph.edu/~rpeng/">Roger D. Peng</a>). Thanks to them I fell in love with data analysis and R which really helped me to get a wonderful job as mathematician-analyst after graduation.</p>
-<p>Years went by until autumn 2016 (about a year ago) when I <em>suddenly</em> discovered the <a href="http://r4ds.had.co.nz/">R for Data Science</a> book and other works by <a href="http://hadley.nz/">Hadley Wickham</a>. At the time I had heard only about <a href="http://ggplot2.tidyverse.org">ggplot2</a> but nothing more as base R was pretty enough for my work. After this discovery I fell into a rabbit hole: <a href="https://www.tidyverse.org/">tidyverse</a>, <a href="http://rmarkdown.rstudio.com/">R Markdown</a>, reproducible research, <a href="http://r-pkgs.had.co.nz/">writing R packages</a> and so on. Finally after <a href="https://github.com/rstudio/blogdown">blogdown</a> reached CRAN I realized that it is time to give back to the great R community by being more web present.</p>
+<p>The first experience in the field came to me in the early 2013 (in the middle of my university graduate year). I decided to take a “Data Analysis” course at Coursera (taught by amazing <a href="http://jtleek.com/">Jeff Leek</a>) which later transformed into <a href="https://www.coursera.org/specializations/jhu-data-science">Data Science Specialization</a> from John Hopkins University. After watching some videos, it came to me that knowledge of some weird programming language called R is needed in order to complete the course. That insight led me to another Coursera course “Computing for Data Analysis” (offered by no less amazing <a href="http://www.biostat.jhsph.edu/~rpeng/">Roger D. Peng</a>). Thanks to them, I fell in love with data analysis and R, which really helped me to get a wonderful job as mathematician-analyst after graduation.</p>
+<p>Years went by until autumn 2016 (about a year ago), when I <em>suddenly</em> discovered the <a href="http://r4ds.had.co.nz/">R for Data Science</a> book and other works by <a href="http://hadley.nz/">Hadley Wickham</a>. At the time I had heard only about <a href="http://ggplot2.tidyverse.org">ggplot2</a> but nothing more, as base R was pretty enough for my work. After this discovery I fell into a rabbit hole: <a href="https://www.tidyverse.org/">tidyverse</a>, <a href="http://rmarkdown.rstudio.com/">R Markdown</a>, reproducible research, <a href="http://r-pkgs.had.co.nz/">writing R packages</a> and so on. Finally, after <a href="https://github.com/rstudio/blogdown">blogdown</a> reached CRAN, I realized that it is time to give back to the great R community by being more web present.</p>
 </div>
 <div id="goal" class="section level2">
 <h2>Goal</h2>
-<p>Being perfectionist I spent quite some time figuring out the name of my future site. In ideal world it should have the next features:</p>
+<p>Being perfectionist, I spent quite some time figuring out the name of my future site. In ideal world it should have the next features:</p>
 <ul>
 <li><strong>Be representative</strong> of the site content.</li>
 <li><strong>Be memorable</strong> to audience. In general it means to have a pleasant pronunciation, to be quite short and to evoke colourful images in people’s minds.</li>
 <li><strong>Be available</strong> as domain name and twitter account.</li>
 </ul>
-<p>I had some possible versions of the name but none of them actually <em>felt right</em>. Eventually I came up with an idea of giving tribute to three persons mentioned above for sharing their knowledge with the world (and me in particular). The <strong>goal</strong> was to take one book authored by each of them and perform some text analysis in order to get inspiration. This also felt like a good opportunity to try <a href="https://github.com/juliasilge/tidytext">tidytext</a> package.</p>
+<p>I had some possible versions of the name, but none of them actually <em>felt right</em>. Eventually, I came up with an idea of giving tribute to three persons mentioned above for sharing their knowledge with the world (and me in particular). The <strong>goal</strong> was to take one book authored by each of them and perform some text analysis in order to get inspiration. This also felt like a good opportunity to try <a href="https://github.com/juliasilge/tidytext">tidytext</a> package.</p>
 <p>The next books were chosen (which had big influence on me):</p>
 <ul>
 <li><a href="https://leanpub.com/datastyle">The Elements of Data Analytic Style</a> (EDAS) by Jeff Leek.</li>
@@ -42,12 +42,12 @@ description: "The story of QuestionFlow origins."
 <div id="data-preparation" class="section level1">
 <h1>Data preparation</h1>
 <p>The goal is to transform all books into <a href="http://tidytextmining.com/tidytext.html">tidy text</a> format with words as tokens for further analysis. Results and full code of data preparation can be found in my <a href="https://github.com/echasnovski/jeroha">jeroha</a> (JEff-ROger-HAdley) repository.</p>
-<p>For following data preparation code to work one needs the following packages installed: <code>pdftools</code>, <code>dplyr</code>, <code>tidytext</code>, <code>stringr</code>. However loaded should be only two of them:</p>
+<p>For following data preparation code to work the next packages are needed to be installed: <code>pdftools</code>, <code>dplyr</code>, <code>tidytext</code>, <code>stringr</code>. However loaded should be only two of them:</p>
 <pre class="r"><code>library(dplyr, warn.conflicts = FALSE, quietly = TRUE)
 library(stringr, warn.conflicts = FALSE, quietly = TRUE)</code></pre>
 <div id="tidy-pdf" class="section level2">
 <h2>Tidy pdf</h2>
-<p>Here is the code of function for tidying pdf file at the <code>file</code> path. At first it (with help of <a href="https://github.com/ropensci/pdftools">pdftools</a> package) converts pdf file into list of strings (text per page). Then this list is converted into tibble with the following structure:</p>
+<p>Here is the code of function for tidying pdf file at the <code>file</code> path. At first, it, with help of <a href="https://github.com/ropensci/pdftools">pdftools</a> package, converts pdf file into list of strings (text per page). Then this list is converted into tibble with the following structure:</p>
 <ul>
 <li><strong>page</strong> &lt;int&gt; : Word’s page number.</li>
 <li><strong>line</strong> &lt;int&gt; : Word’s line number on page (empty lines are ignored).</li>
@@ -75,7 +75,7 @@ library(stringr, warn.conflicts = FALSE, quietly = TRUE)</code></pre>
 </div>
 <div id="tidy-rmd" class="section level2">
 <h2>Tidy Rmd</h2>
-<p>The R4DS book can be obtained as a collection of Rmd files. The goal is to extract text (not code or metadata). Unfortunately I didn’t find an easy way to do that with <a href="https://yihui.name/knitr/">knitr</a> or <a href="http://rmarkdown.rstudio.com/">rmarkdown</a> so I wrote function myself. The <code>tidy_rmd()</code> reads line by line file at location <code>file</code> and collapses them into one string. After that with some magic of regular expressions and <code>str_replace_all()</code> from <a href="http://stringr.tidyverse.org/">stringr</a> it removes YAML header, code and LaTeX blocks. <strong>Note</strong> that this function is designed to only handle Rmd files with relatively simple formatting and can return undesirable output in some edge cases.</p>
+<p>The R4DS book can be obtained as a collection of Rmd files. The goal is to extract text, not code or metadata. Unfortunately, I didn’t find an easy way to do that with <a href="https://yihui.name/knitr/">knitr</a> or <a href="http://rmarkdown.rstudio.com/">rmarkdown</a>, so I wrote function myself. The <code>tidy_rmd()</code> reads file line by line at location <code>file</code> and collapses them into one string. After that, with some magic of regular expressions and <code>str_replace_all()</code> from <a href="http://stringr.tidyverse.org/">stringr</a>, it removes YAML header, code and LaTeX blocks. <strong>Note</strong> that this function is designed to only handle Rmd files with relatively simple formatting and can return undesirable output in some edge cases.</p>
 <p>The output is a tibble with the following structure:</p>
 <ul>
 <li><strong>name</strong> &lt;int&gt; : Document name which is given as function argument. Default is file’s base name without extension.</li>
@@ -109,9 +109,9 @@ file_base_name &lt;- function(file) {
 <p>Only meaningful words should be used in text analysis. They are:</p>
 <ul>
 <li>Not <a href="https://en.wikipedia.org/wiki/Stop_words">stop words</a>. <code>tidytext</code> package has a data frame <code>stop_words</code> with the most common stop words.</li>
-<li>Words that contain only alphabetic characters. This feature is of course arguable. I decided to add it because otherwise data can contain some links and words with <strong>'</strong> : “we’ll”, “word’s” etc. Moreover this is not very strict project so I think it is appropriate decision.</li>
+<li>Words that contain only alphabetic characters. This feature is, of course, arguable. I decided to add it because otherwise data can contain some links and words with <strong>'</strong> : “we’ll”, “word’s” etc. Moreover, this is not very strict project, so I think it is appropriate decision.</li>
 </ul>
-<p>Words scraped from Rmd files should be processed a little more carefully: they can contain emphasis characters “_&quot; and “*&quot; at the beginning or end. So before filtering good words these symbols should be removed.</p>
+<p>Words scraped from Rmd files should be processed a little more carefully: they can contain emphasis characters “_&quot; and “*&quot; at the beginning or end. So, before filtering good words, these symbols should be removed.</p>
 <pre class="r"><code>remove_md_emphasis &lt;- function(x) {
   str_replace_all(x, &quot;^[_*]+|[_*]+$&quot;, &quot;&quot;)
 }
@@ -150,7 +150,7 @@ ads &lt;- prepare_book(&quot;ADS&quot;)</code></pre>
 </div>
 <div id="r4ds-bookdown-folder" class="section level3">
 <h3>R4DS bookdown folder</h3>
-<p>In order to obtain whole R4DS book as one tibble one should apply <code>tidy_rmd()</code> to all Rmd files listed in ’_bookdown.yml’ file and bind results with <code>dplyr::bind_rows()</code>. This also ensures that words are arranged in the order according to their appearance in the book.</p>
+<p>In order to obtain whole R4DS book as one tibble, one should apply <code>tidy_rmd()</code> to all Rmd files listed in ’_bookdown.yml’ file and bind results with <code>dplyr::bind_rows()</code>. This also ensures that words are arranged in the order according to their appearance in the book.</p>
 <pre class="r"><code># Get file names used to knit the book
 # r4ds folder should be in the data-raw folder of working directory
 r4ds_file_names &lt;- readLines(file.path(&quot;data-raw&quot;, &quot;r4ds&quot;, &quot;_bookdown.yml&quot;)) %&gt;%
@@ -183,13 +183,13 @@ r4ds &lt;- file.path(&quot;data-raw&quot;, &quot;r4ds&quot;, r4ds_pages[[&quot;f
   left_join(y = r4ds_pages %&gt;% select(page, pageName),
             by = &quot;pageName&quot;) %&gt;%
   select(id, book, page, pageName, word)</code></pre>
-<p>Due to html format of <code>r4ds</code> one file represents both chapter and page. For consistency with <code>edas</code> and <code>ads</code> name ‘page’ was chosen. With this <code>r4ds</code> has the same structure as JHU pdf books but column <strong>line</strong> is replaced with <strong>pageName</strong> (the name chapter/page file).</p>
+<p>Due to html format of <code>r4ds</code>, one file represents both chapter and page. For consistency with <code>edas</code> and <code>ads</code>, name ‘page’ was chosen. With this, <code>r4ds</code> has the same structure as JHU pdf books but column <strong>line</strong> is replaced with <strong>pageName</strong> (the name chapter/page file).</p>
 </div>
 </div>
 </div>
 <div id="exploration" class="section level1">
 <h1>Exploration</h1>
-<p>Prepare tibble of all books combined.</p>
+<p>At first, we should prepare tibble of all books combined.</p>
 <pre class="r"><code>select_book_cols &lt;- . %&gt;% select(id, book, page, word)
 
 books &lt;- bind_rows(
@@ -236,12 +236,12 @@ plot_freq_words &lt;- function(tbl, n = 10) {
 <p><img src="/post/2017-10-13-how-to-scrape-pdf-and-rmd-to-get-inspiration_files/figure-html/Word%20frequencies-1.png" width="672" /></p>
 <p>Some thoughts about this plot:</p>
 <ul>
-<li>As expected words like “data” and “analysis” are among the most frequent ones.</li>
+<li>As expected, words like “data” and “analysis” are among the most frequent ones.</li>
 <li>Word “soda” in ADS is quite frequent. This is because many examples were constructed using research of soda industry.</li>
-<li>Word “question” is the second most popular among all words. Indeed the narrative of “The Art of Data Science” is centered around concept of “question”: what is a good one, how it should be used and so on.</li>
+<li>Word “question” is the second most popular among all words. Indeed, the narrative of “The Art of Data Science” is centered around concept of “question”: what is a good one, how it should be used and so on.</li>
 </ul>
-<p><em>Fortunately</em> at this point something clicked in my mind. During the testing of <code>tidy_rmd()</code> I saw word ‘workflow’ among others in R4DS which weirdly stuck in my head. Combined with new knowledge about ‘question’ I realized that my preferred way of doing data analysis can be described as “ask appropriate <strong>question</strong> and answer it using R work<b>flow</b>”. In my opinion the result <strong>QuestionFlow</strong> satisfied all conditions of a good site name stated in <a href="#goal">Goal</a>.</p>
-<p>However the exploration of the most frequent words doesn’t feel (for me) as completed at this point. The reason is presence of similar words like ‘functions’ and ‘function’ among most frequent. To eliminate this let’s extract from words their <a href="https://en.wikipedia.org/wiki/Word_stem">stem</a>. This is easily done with package <a href="https://cran.r-project.org/web/packages/tokenizers/index.html">tokenizers</a>:</p>
+<p><em>Fortunately</em>, at this point something clicked in my mind. During the testing of <code>tidy_rmd()</code> I saw word ‘workflow’ among others in R4DS, which weirdly stuck in my head. Combined with new knowledge about ‘question’, I realized that my preferred way of doing data analysis can be described as “ask appropriate <strong>question</strong> and answer it using R work<b>flow</b>”. In my opinion, the result <strong>QuestionFlow</strong> satisfied all conditions of a good site name stated in <a href="#goal">Goal</a>.</p>
+<p>However, the exploration of the most frequent words doesn’t feel as completed at this point. The reason is presence of similar words, like ‘functions’ and ‘function’, among most frequent. To eliminate this, let’s extract from words their <a href="https://en.wikipedia.org/wiki/Word_stem">stem</a>. This is easily done with package <a href="https://cran.r-project.org/web/packages/tokenizers/index.html">tokenizers</a>:</p>
 <pre class="r"><code>books %&gt;%
   mutate(word = unlist(tokenizers::tokenize_word_stems(word))) %&gt;%
   compute_word_freq() %&gt;%
@@ -260,9 +260,9 @@ plot_freq_words &lt;- function(tbl, n = 10) {
 <ul>
 <li>Using text analysis for inspiration can lead to desired result.</li>
 <li>Doing code testing can help to get some <em>clicks</em> in researcher’s head.</li>
-<li>Using in book examples from one research area can lead to “interesting” discoveries during text analysis.</li>
+<li>Using examples from one research area can lead to “interesting” discoveries during text analysis of the book.</li>
 <li>Word <code>QuestionFlow</code> satisfied all conditions of a good site name (at the time of exploration).</li>
-<li>Analyzing stems instead of words can lead to significantly different results.</li>
+<li>Analyzing stems instead of words can lead to significantly different insights.</li>
 </ul>
 {{% spoiler id="sessionInfo" title="sessionInfo()" %}}
 <pre class="r"><code>sessionInfo()
