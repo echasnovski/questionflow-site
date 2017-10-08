@@ -1,0 +1,302 @@
+---
+title: How to Scrape Pdf and Rmd to Get Inspiration
+author: Evgeni Chasnovski
+date: '2017-10-13'
+publishdate: '2017-10-13'
+categories: []
+tags:
+  - rstats
+  - tidytext
+description: "The story of QuestionFlow origins."
+---
+
+
+
+<div id="prologue" class="section level1">
+<h1>Prologue</h1>
+<p>This post is a story about how I came up with an idea of <strong>QuestionFlow</strong> name by performing text analysis. <strong>Beware</strong> of a lot of code.</p>
+<div id="introduction" class="section level2">
+<h2>Introduction</h2>
+<p>My name is Evgeni and I am a mathematician with strong passion for data analysis and <a href="https://www.r-project.org/">R</a>.</p>
+<p>The first experience in the field came to me in the early 2013 (in the middle of my university graduate year). I decided to take a “Data Analysis” course at Coursera (taught by amazing <a href="http://jtleek.com/">Jeff Leek</a>) which later transformed into <a href="https://www.coursera.org/specializations/jhu-data-science">Data Science Specialization</a> from John Hopkins University. After watching some videos it came to me that knowledge of some weird programming language called R is needed in order to complete the course. That insight led me to another Coursera course “Computing for Data Analysis” (offered by no less amazing <a href="http://www.biostat.jhsph.edu/~rpeng/">Roger D. Peng</a>). Thanks to them I fell in love with data analysis and R which really helped me to get a wonderful job as mathematician-analyst after graduation.</p>
+<p>Years went by until autumn 2016 (about a year ago) when I <em>suddenly</em> discovered the <a href="http://r4ds.had.co.nz/">R for Data Science</a> book and other works by <a href="http://hadley.nz/">Hadley Wickham</a>. At the time I had heard only about <a href="http://ggplot2.tidyverse.org">ggplot2</a> but nothing more as base R was pretty enough for my work. After this discovery I fell into a rabbit hole: <a href="https://www.tidyverse.org/">tidyverse</a>, <a href="http://rmarkdown.rstudio.com/">R Markdown</a>, reproducible research, <a href="http://r-pkgs.had.co.nz/">writing R packages</a> and so on. Finally after <a href="https://github.com/rstudio/blogdown">blogdown</a> reached CRAN I realized that it is time to give back to the great R community by being more web present.</p>
+</div>
+<div id="goal" class="section level2">
+<h2>Goal</h2>
+<p>Being perfectionist I spent quite some time figuring out the name of my future site. In ideal world it should have the next features:</p>
+<ul>
+<li><strong>Be representative</strong> of the site content.</li>
+<li><strong>Be memorable</strong> to audience. In general it means to have a pleasant pronunciation, to be quite short and to evoke colourful images in people’s minds.</li>
+<li><strong>Be available</strong> as domain name and twitter account.</li>
+</ul>
+<p>I had some possible versions of the name but none of them actually <em>felt right</em>. Eventually I came up with an idea of giving tribute to three persons mentioned above for sharing their knowledge with the world (and me in particular). The <strong>goal</strong> was to take one book authored by each of them and perform some text analysis in order to get inspiration. This also felt like a good opportunity to try <a href="https://github.com/juliasilge/tidytext">tidytext</a> package.</p>
+<p>The next books were chosen (which had big influence on me):</p>
+<ul>
+<li><a href="https://leanpub.com/datastyle">The Elements of Data Analytic Style</a> (EDAS) by Jeff Leek.</li>
+<li><a href="https://leanpub.com/artofdatascience">The Art of Data Science</a> (ADS) by Roger D. Peng and Elizabeth Matsui.</li>
+<li><a href="http://r4ds.had.co.nz/">R for Data Science</a> (R4DS) by Garrett Grolemund and Hadley Wickham.</li>
+</ul>
+<p>All of them can be obtained for free (but be careful with license): EDAS and ADS as <strong>pdf</strong> files, R4DS as <a href="https://github.com/rstudio/bookdown">bookdown</a> repository from <a href="https://github.com/hadley/r4ds">Hadley’s github</a>. I highly recommend them to read for everybody interested in data analysis.</p>
+</div>
+</div>
+<div id="data-preparation" class="section level1">
+<h1>Data preparation</h1>
+<p>The goal is to transform all books into <a href="http://tidytextmining.com/tidytext.html">tidy text</a> format with words as tokens for further analysis. Results and full code of data preparation can be found in my <a href="https://github.com/echasnovski/jeroha">jeroha</a> (JEff-ROger-HAdley) repository.</p>
+<p>For following data preparation code to work one needs the following packages installed: <code>pdftools</code>, <code>dplyr</code>, <code>tidytext</code>, <code>stringr</code>. However loaded should be only two of them:</p>
+<pre class="r"><code>library(dplyr, warn.conflicts = FALSE, quietly = TRUE)
+library(stringr, warn.conflicts = FALSE, quietly = TRUE)</code></pre>
+<div id="tidy-pdf" class="section level2">
+<h2>Tidy pdf</h2>
+<p>Here is the code of function for tidying pdf file at the <code>file</code> path. At first it (with help of <a href="https://github.com/ropensci/pdftools">pdftools</a> package) converts pdf file into list of strings (text per page). Then this list is converted into tibble with the following structure:</p>
+<ul>
+<li><strong>page</strong> &lt;int&gt; : Word’s page number.</li>
+<li><strong>line</strong> &lt;int&gt; : Word’s line number on page (empty lines are ignored).</li>
+<li><strong>word</strong> &lt;chr&gt; : Word.</li>
+</ul>
+<pre class="r"><code>tidy_pdf &lt;- function(file) {
+  pages_list &lt;- file %&gt;%
+    pdftools::pdf_text() %&gt;%
+    lapply(. %&gt;% strsplit(&quot;\n&quot;) %&gt;% `[[`(1))
+
+  lapply(seq_along(pages_list), function(i) {
+    page_lines &lt;- pages_list[[i]]
+    n_lines &lt;- length(page_lines)
+
+    tibble(
+      page = rep(i, n_lines),
+      line = seq_len(n_lines),
+      text = page_lines
+    ) %&gt;%
+      tidytext::unnest_tokens(word, text, token = &quot;words&quot;)
+  }) %&gt;%
+    bind_rows()
+}</code></pre>
+<p>This function is enough to scrape text from both EDAS and ADS.</p>
+</div>
+<div id="tidy-rmd" class="section level2">
+<h2>Tidy Rmd</h2>
+<p>The R4DS book can be obtained as a collection of Rmd files. The goal is to extract text (not code or metadata). Unfortunately I didn’t find an easy way to do that with <a href="https://yihui.name/knitr/">knitr</a> or <a href="http://rmarkdown.rstudio.com/">rmarkdown</a> so I wrote function myself. The <code>tidy_rmd()</code> reads line by line file at location <code>file</code> and collapses them into one string. After that with some magic of regular expressions and <code>str_replace_all()</code> from <a href="http://stringr.tidyverse.org/">stringr</a> it removes YAML header, code and LaTeX blocks. <strong>Note</strong> that this function is designed to only handle Rmd files with relatively simple formatting and can return undesirable output in some edge cases.</p>
+<p>The output is a tibble with the following structure:</p>
+<ul>
+<li><strong>name</strong> &lt;int&gt; : Document name which is given as function argument. Default is file’s base name without extension.</li>
+<li><strong>word</strong> &lt;chr&gt; : Word.</li>
+</ul>
+<pre class="r"><code>tidy_rmd &lt;- function(file, name = file_base_name(file)) {
+  file_string &lt;- file %&gt;%
+    readLines() %&gt;%
+    paste0(collapse = &quot; &quot;) %&gt;%
+    # Remove YAML header
+    str_replace_all(&quot;^--- .*?--- &quot;, &quot;&quot;) %&gt;%
+    # Remove code
+    str_replace_all(&quot;```.*?```&quot;, &quot;&quot;) %&gt;%
+    str_replace_all(&quot;`.*?`&quot;, &quot;&quot;) %&gt;%
+    # Remove LaTeX
+    str_replace_all(&quot;[^\\\\]\\$\\$.*?[^\\\\]\\$\\$&quot;, &quot;&quot;) %&gt;%
+    str_replace_all(&quot;[^\\\\]\\$.*?[^\\\\]\\$&quot;, &quot;&quot;)
+
+  tibble(name = name, text = file_string) %&gt;%
+    tidytext::unnest_tokens(word, text, token = &quot;words&quot;)
+}
+
+file_base_name &lt;- function(file) {
+  file %&gt;%
+    basename() %&gt;%
+    str_replace_all(&quot;\\..*?$&quot;, &quot;&quot;)
+}</code></pre>
+</div>
+<div id="filter-good-words" class="section level2">
+<h2>Filter good words</h2>
+<p>Only meaningful words should be used in text analysis. They are:</p>
+<ul>
+<li>Not <a href="https://en.wikipedia.org/wiki/Stop_words">stop words</a>. <code>tidytext</code> package has a data frame <code>stop_words</code> with the most common stop words.</li>
+<li>Words that contain only alphabetic characters. This feature is of course arguable. I decided to add it because otherwise data can contain some links and words with <strong>'</strong> : “we’ll”, “word’s” etc. Moreover this is not very strict project so I think it is appropriate decision.</li>
+</ul>
+<p>Words scraped from Rmd files should be processed a little more carefully: they can contain emphasis characters “_&quot; and “*&quot; at the beginning or end. So before filtering good words these symbols should be removed.</p>
+<pre class="r"><code>remove_md_emphasis &lt;- function(x) {
+  str_replace_all(x, &quot;^[_*]+|[_*]+$&quot;, &quot;&quot;)
+}
+
+filter_good_words &lt;- function(word_tbl) {
+  word_tbl %&gt;%
+    anti_join(tidytext::stop_words, by = &quot;word&quot;) %&gt;%
+    filter(str_detect(word, pattern = &quot;^[[:alpha:]]+$&quot;))
+}</code></pre>
+<p><code>filter_good_words()</code> should be applied to data frames with character column <code>word</code>.</p>
+</div>
+<div id="scrape-books" class="section level2">
+<h2>Scrape books</h2>
+<div id="jhu-pdf-files" class="section level3">
+<h3>JHU pdf files</h3>
+<pre class="r"><code>prepare_book &lt;- function(book_name) {
+  # File should be in the data-raw folder of working directory
+  file.path(&quot;data-raw&quot;, paste0(book_name, &quot;.pdf&quot;)) %&gt;%
+    tidy_pdf() %&gt;%
+    filter_good_words() %&gt;%
+    mutate(
+      id = seq_len(n()),
+      book = rep(book_name, n())
+    ) %&gt;%
+    select(id, book, everything())
+}
+
+edas &lt;- prepare_book(&quot;EDAS&quot;)
+ads &lt;- prepare_book(&quot;ADS&quot;)</code></pre>
+<p><code>edas</code> and <code>ads</code> have the following structure:</p>
+<ul>
+<li><strong>id</strong> &lt;int&gt; : Index of word inside the book.</li>
+<li><strong>book</strong> &lt;chr&gt; : Name of the book.</li>
+<li><strong>page</strong>, <strong>line</strong>, <strong>word</strong> : the same as in <code>tidy_pdf()</code> output.</li>
+</ul>
+</div>
+<div id="r4ds-bookdown-folder" class="section level3">
+<h3>R4DS bookdown folder</h3>
+<p>In order to obtain whole R4DS book as one tibble one should apply <code>tidy_rmd()</code> to all Rmd files listed in ’_bookdown.yml’ file and bind results with <code>dplyr::bind_rows()</code>. This also ensures that words are arranged in the order according to their appearance in the book.</p>
+<pre class="r"><code># Get file names used to knit the book
+# r4ds folder should be in the data-raw folder of working directory
+r4ds_file_names &lt;- readLines(file.path(&quot;data-raw&quot;, &quot;r4ds&quot;, &quot;_bookdown.yml&quot;)) %&gt;%
+  paste0(collapse = &quot; &quot;) %&gt;%
+  str_extract_all(&#39;\\&quot;.*\\.[Rr]md\\&quot;&#39;) %&gt;%
+  `[[`(1) %&gt;%
+  str_replace_all(&#39;&quot;&#39;, &#39;&#39;) %&gt;%
+  str_split(&quot;,[:space:]*&quot;) %&gt;%
+  `[[`(1)
+
+# Orginize book data into tibble
+r4ds_pages &lt;- tibble(
+  page = seq_len(length(r4ds_file_names)),
+  file = r4ds_file_names,
+  pageName = file_base_name(r4ds_file_names)
+)
+
+# Scrape book
+r4ds &lt;- file.path(&quot;data-raw&quot;, &quot;r4ds&quot;, r4ds_pages[[&quot;file&quot;]]) %&gt;%
+  lapply(tidy_rmd) %&gt;%
+  bind_rows() %&gt;%
+  rename(pageName = name) %&gt;%
+  # Remove md emphasis before filtering words with only alphabetic characters.
+  mutate(word = remove_md_emphasis(word)) %&gt;%
+  filter_good_words() %&gt;%
+  mutate(
+    id = seq_len(n()),
+    book = rep(&quot;R4DS&quot;, n())
+  ) %&gt;%
+  left_join(y = r4ds_pages %&gt;% select(page, pageName),
+            by = &quot;pageName&quot;) %&gt;%
+  select(id, book, page, pageName, word)</code></pre>
+<p>Due to html format of <code>r4ds</code> one file represents both chapter and page. For consistency with <code>edas</code> and <code>ads</code> name ‘page’ was chosen. With this <code>r4ds</code> has the same structure as JHU pdf books but column <strong>line</strong> is replaced with <strong>pageName</strong> (the name chapter/page file).</p>
+</div>
+</div>
+</div>
+<div id="exploration" class="section level1">
+<h1>Exploration</h1>
+<p>Prepare tibble of all books combined.</p>
+<pre class="r"><code>select_book_cols &lt;- . %&gt;% select(id, book, page, word)
+
+books &lt;- bind_rows(
+  ads %&gt;% select_book_cols(),
+  edas %&gt;% select_book_cols(),
+  r4ds %&gt;% select_book_cols()
+)</code></pre>
+<p>The most obvious question to ask is <em>what are the most frequent words</em> in each book. For reasons which will become obvious a little bit later, let’s define functions for data preparation and plotting:</p>
+<pre class="r"><code>library(ggplot2)
+
+compute_word_freq &lt;- . %&gt;%
+  group_by(book, word) %&gt;%
+  summarise(n = n()) %&gt;%
+  mutate(freq = n / sum(n)) %&gt;%
+  ungroup()
+
+plot_freq_words &lt;- function(tbl, n = 10) {
+  tbl %&gt;%
+    group_by(book) %&gt;%
+    top_n(n = n, wt = freq) %&gt;%
+    ungroup() %&gt;%
+    arrange(book, freq) %&gt;%
+    # Little hack to plot word frequences in descending order with facetting
+    mutate(
+      label = paste0(book, &quot;_&quot;, word),
+      label = factor(label, levels = label)
+    ) %&gt;%
+    ggplot(aes(label, freq, fill = book)) +
+      geom_col() +
+      facet_grid(book ~ ., scales = &quot;free&quot;) +
+      # Remove book prefix for appropriate labels
+      scale_x_discrete(labels = function(x) {gsub(&quot;^.*_&quot;, &quot;&quot;, x)}) +
+      scale_fill_discrete(guide = FALSE) +
+      coord_flip() +
+      theme_bw() +
+      theme(panel.grid.minor.y = element_blank())
+}</code></pre>
+<p>Plot of word frequencies looks as follows:</p>
+<pre class="r"><code>books %&gt;%
+  compute_word_freq() %&gt;%
+  plot_freq_words() +
+    labs(title = &quot;Most frequent words in books&quot;,
+         x = &quot;Word&quot;, y = &quot;Frequency in book&quot;)</code></pre>
+<p><img src="/post/2017-10-13-how-to-scrape-pdf-and-rmd-to-get-inspiration_files/figure-html/Word%20frequencies-1.png" width="672" /></p>
+<p>Some thoughts about this plot:</p>
+<ul>
+<li>As expected words like “data” and “analysis” are among the most frequent ones.</li>
+<li>Word “soda” in ADS is quite frequent. This is because many examples were constructed using research of soda industry.</li>
+<li>Word “question” is the second most popular among all words. Indeed the narrative of “The Art of Data Science” is centered around concept of “question”: what is a good one, how it should be used and so on.</li>
+</ul>
+<p><em>Fortunately</em> at this point something clicked in my mind. During the testing of <code>tidy_rmd()</code> I saw word ‘workflow’ among others in R4DS which weirdly stuck in my head. Combined with new knowledge about ‘question’ I realized that my preferred way of doing data analysis can be described as “ask appropriate <strong>question</strong> and answer it using R work<b>flow</b>”. In my opinion the result <strong>QuestionFlow</strong> satisfied all conditions of a good site name stated in <a href="#goal">Goal</a>.</p>
+<p>However the exploration of the most frequent words doesn’t feel (for me) as completed at this point. The reason is presence of similar words like ‘functions’ and ‘function’ among most frequent. To eliminate this let’s extract from words their <a href="https://en.wikipedia.org/wiki/Word_stem">stem</a>. This is easily done with package <a href="https://cran.r-project.org/web/packages/tokenizers/index.html">tokenizers</a>:</p>
+<pre class="r"><code>books %&gt;%
+  mutate(word = unlist(tokenizers::tokenize_word_stems(word))) %&gt;%
+  compute_word_freq() %&gt;%
+  plot_freq_words() +
+    labs(title = &quot;Most frequent stems in books&quot;,
+         x = &quot;Stem&quot;, y = &quot;Frequency in book&quot;)</code></pre>
+<p><img src="/post/2017-10-13-how-to-scrape-pdf-and-rmd-to-get-inspiration_files/figure-html/Stem%20frequencies-1.png" width="672" /></p>
+<p>We see several important changes:</p>
+<ul>
+<li>Stem “model” showed considerable growth in frequency compared to word “model”. The reason is a rather frequent use of words “models” (as plural and as verb), “modeling” (in ADS and EDAS) and “modelling” (in R4DS).</li>
+<li>Stems “function” and “variabl” are as twice more frequent as words “function” and “variable” due to frequent use of “functions” and “variables” respectively.</li>
+</ul>
+</div>
+<div id="conclusions" class="section level1">
+<h1>Conclusions</h1>
+<ul>
+<li>Using text analysis for inspiration can lead to desired result.</li>
+<li>Doing code testing can help to get some <em>clicks</em> in researcher’s head.</li>
+<li>Using in book examples from one research area can lead to “interesting” discoveries during text analysis.</li>
+<li>Word <code>QuestionFlow</code> satisfied all conditions of a good site name (at the time of exploration).</li>
+<li>Analyzing stems instead of words can lead to significantly different results.</li>
+</ul>
+{{% spoiler id="sessionInfo" title="sessionInfo()" %}}
+<pre class="r"><code>sessionInfo()
+#&gt; R version 3.4.2 (2017-09-28)
+#&gt; Platform: x86_64-pc-linux-gnu (64-bit)
+#&gt; Running under: Ubuntu 16.04.3 LTS
+#&gt; 
+#&gt; Matrix products: default
+#&gt; BLAS: /usr/lib/libblas/libblas.so.3.6.0
+#&gt; LAPACK: /usr/lib/lapack/liblapack.so.3.6.0
+#&gt; 
+#&gt; locale:
+#&gt;  [1] LC_CTYPE=ru_UA.UTF-8       LC_NUMERIC=C              
+#&gt;  [3] LC_TIME=ru_UA.UTF-8        LC_COLLATE=ru_UA.UTF-8    
+#&gt;  [5] LC_MONETARY=ru_UA.UTF-8    LC_MESSAGES=ru_UA.UTF-8   
+#&gt;  [7] LC_PAPER=ru_UA.UTF-8       LC_NAME=C                 
+#&gt;  [9] LC_ADDRESS=C               LC_TELEPHONE=C            
+#&gt; [11] LC_MEASUREMENT=ru_UA.UTF-8 LC_IDENTIFICATION=C       
+#&gt; 
+#&gt; attached base packages:
+#&gt; [1] methods   stats     graphics  grDevices utils     datasets  base     
+#&gt; 
+#&gt; other attached packages:
+#&gt; [1] bindrcpp_0.2  ggplot2_2.2.1 stringr_1.2.0 dplyr_0.7.3   jeroha_0.1.0 
+#&gt; 
+#&gt; loaded via a namespace (and not attached):
+#&gt;  [1] Rcpp_0.12.12     knitr_1.17       bindr_0.1        magrittr_1.5    
+#&gt;  [5] munsell_0.4.3    colorspace_1.3-2 R6_2.2.2         rlang_0.1.2.9000
+#&gt;  [9] plyr_1.8.4       tools_3.4.2      grid_3.4.2       gtable_0.2.0    
+#&gt; [13] htmltools_0.3.6  lazyeval_0.2.0   yaml_2.1.14      rprojroot_1.2   
+#&gt; [17] digest_0.6.12    assertthat_0.2.0 tibble_1.3.4     bookdown_0.5    
+#&gt; [21] reshape2_1.4.2   SnowballC_0.5.1  tokenizers_0.1.4 glue_1.1.1      
+#&gt; [25] evaluate_0.10.1  rmarkdown_1.6    blogdown_0.1     labeling_0.3    
+#&gt; [29] stringi_1.1.5    compiler_3.4.2   scales_0.5.0     backports_1.1.0 
+#&gt; [33] pkgconfig_2.0.1</code></pre>
+{{% /spoiler %}}
+</div>
