@@ -18,8 +18,8 @@ description: "The story of QuestionFlow origins."
 <div id="introduction" class="section level2">
 <h2>Introduction</h2>
 <p>My name is Evgeni and I am a mathematician with strong passion for data analysis and <a href="https://www.r-project.org/">R</a>.</p>
-<p>The first experience in the field came to me in the early 2013 (in the middle of my university graduate year). I decided to take a “Data Analysis” course at Coursera (taught by amazing <a href="http://jtleek.com/">Jeff Leek</a>) which later transformed into <a href="https://www.coursera.org/specializations/jhu-data-science">Data Science Specialization</a> from John Hopkins University. After watching some videos, it came to me that knowledge of some weird programming language called R is needed in order to complete the course. That insight led me to another Coursera course “Computing for Data Analysis” (offered by no less amazing <a href="http://www.biostat.jhsph.edu/~rpeng/">Roger D. Peng</a>). Thanks to them, I fell in love with data analysis and R, which really helped me to get a wonderful job as mathematician-analyst after graduation.</p>
-<p>Years went by until autumn 2016 (about a year ago), when I <em>suddenly</em> discovered the <a href="http://r4ds.had.co.nz/">R for Data Science</a> book and other works by <a href="http://hadley.nz/">Hadley Wickham</a>. At the time I had heard only about <a href="http://ggplot2.tidyverse.org">ggplot2</a> but nothing more, as base R was pretty enough for my work. After this discovery I fell into a rabbit hole: <a href="https://www.tidyverse.org/">tidyverse</a>, <a href="http://rmarkdown.rstudio.com/">R Markdown</a>, reproducible research, <a href="http://r-pkgs.had.co.nz/">writing R packages</a> and so on. Finally, after <a href="https://github.com/rstudio/blogdown">blogdown</a> reached CRAN, I realized that it is time to give back to the great R community by being more web present.</p>
+<p>The first experience in the field came to me in the early 2013, in the middle of my university graduate year. I decided to take a “Data Analysis” course at Coursera (taught by amazing <a href="http://jtleek.com/">Jeff Leek</a>) which later transformed into <a href="https://www.coursera.org/specializations/jhu-data-science">Data Science Specialization</a> from John Hopkins University. After watching some videos, it came to me that knowledge of some weird programming language called R is needed in order to complete the course. That insight led me to another Coursera course “Computing for Data Analysis” (offered by no less amazing <a href="http://www.biostat.jhsph.edu/~rpeng/">Roger D. Peng</a>). Thanks to them, I fell in love with data analysis and R, which really helped me to get a wonderful job as mathematician-analyst after graduation.</p>
+<p>Years went by until autumn 2016 (about a year ago), when I <em>suddenly</em> discovered the <a href="http://r4ds.had.co.nz/">R for Data Science</a> book and other works by <a href="http://hadley.nz/">Hadley Wickham</a>. At the time I had heard only about <a href="http://ggplot2.tidyverse.org">ggplot2</a> but nothing more, as base R was pretty enough for my work. After this discovery I fell into a rabbit hole: <a href="https://www.tidyverse.org/">tidyverse</a>, <a href="http://rmarkdown.rstudio.com/">R Markdown</a>, reproducible research, <a href="http://r-pkgs.had.co.nz/">writing R packages</a> and so on. Finally, after <a href="https://github.com/rstudio/blogdown">blogdown</a> reached CRAN, I realized that it is time to give back to the great R community by being more web present. Basically it means creating and maintaining own blog/site.</p>
 </div>
 <div id="goal" class="section level2">
 <h2>Goal</h2>
@@ -30,13 +30,13 @@ description: "The story of QuestionFlow origins."
 <li><strong>Be available</strong> as domain name and twitter account.</li>
 </ul>
 <p>I had some possible versions of the name, but none of them actually <em>felt right</em>. Eventually, I came up with an idea of giving tribute to three persons mentioned above for sharing their knowledge with the world (and me in particular). The <strong>goal</strong> was to take one book authored by each of them and perform some text analysis in order to get inspiration. This also felt like a good opportunity to try <a href="https://github.com/juliasilge/tidytext">tidytext</a> package.</p>
-<p>The next books were chosen (which had big influence on me):</p>
+<p>Next books were chosen (which had big influence on me):</p>
 <ul>
 <li><a href="https://leanpub.com/datastyle">The Elements of Data Analytic Style</a> (EDAS) by Jeff Leek.</li>
 <li><a href="https://leanpub.com/artofdatascience">The Art of Data Science</a> (ADS) by Roger D. Peng and Elizabeth Matsui.</li>
 <li><a href="http://r4ds.had.co.nz/">R for Data Science</a> (R4DS) by Garrett Grolemund and Hadley Wickham.</li>
 </ul>
-<p>All of them can be obtained for free (but be careful with license): EDAS and ADS as <strong>pdf</strong> files, R4DS as <a href="https://github.com/rstudio/bookdown">bookdown</a> repository from <a href="https://github.com/hadley/r4ds">Hadley’s github</a>. I highly recommend them to read for everybody interested in data analysis.</p>
+<p>I highly recommend everybody interested in data analysis to read these books. All of them can be obtained for free (but I strongly encourage to reward authors): EDAS and ADS as <strong>pdf</strong> files, R4DS as <a href="https://github.com/rstudio/bookdown">bookdown</a> repository from <a href="https://github.com/hadley/r4ds">Hadley’s github</a>.</p>
 </div>
 </div>
 <div id="data-preparation" class="section level1">
@@ -173,7 +173,7 @@ r4ds &lt;- file.path(&quot;data-raw&quot;, &quot;r4ds&quot;, r4ds_pages[[&quot;f
   lapply(tidy_rmd) %&gt;%
   bind_rows() %&gt;%
   rename(pageName = name) %&gt;%
-  # Remove md emphasis before filtering words with only alphabetic characters.
+  # Remove md emphasis before filtering words with only alphabetic characters
   mutate(word = remove_md_emphasis(word)) %&gt;%
   filter_good_words() %&gt;%
   mutate(
