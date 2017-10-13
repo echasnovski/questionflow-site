@@ -2,6 +2,8 @@
 
 <div class="content-wrapper">
 <main>
+  
+    <h1><b>{{ .Title }}</b></h1>
 
     {{ range .Paginator.Pages }}
         {{ partial "list-item" . }}
