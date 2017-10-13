@@ -1,5 +1,5 @@
 <div class="after-content-cell after-content-sharing" id="twitter-cell"> 
-  <a href="https://twitter.com/share?text={{ .Title | safeHTML}}&nbsp;-&nbsp;{{ .Site.Title }}&amp;url={{ .Permalink }}"><i class="fa fa-twitter"></i></a>
+  <a href="https://twitter.com/share?text={{ .Title | safeHTML}}&nbsp;-&nbsp;{{ .Site.Title }}&nbsp;-&nbsp;&amp;hashtags={{ delimit .Params.tags ", " }}&amp;url={{ .Permalink }}"><i class="fa fa-twitter"></i></a>
 </div>
 
 <div class="after-content-cell after-content-sharing" id="facebook-cell"> 
