@@ -10,6 +10,24 @@
         <link href="{{ .RSSLink }}" rel="feed" type="application/rss+xml" title="{{ .Site.Title }}" />
         {{ end }}
         
+        <!-- Cards -->
+        {{ $defaultThumb := printf "%s%s" .Site.BaseURL .Site.Params.thumb}}
+        
+        <meta name="twitter:card" content="summary" />
+        <meta name="twitter:site" content="{{ .Site.Params.siteTwitter }}" />
+        <meta name="twitter:creator" content="{{ .Site.Params.authorTwitter }}" />
+        <meta name="twitter:title" content="{{ .Title }}" />
+        <meta name="twitter:description" content="{{ .Description | default .Site.Params.Description }}" />
+        <meta name="twitter:image" content="{{ .Params.image | default $defaultThumb }}" />
+        
+        <meta property="og:title" content="{{ .Title }}">
+        <meta property="og:description" content="{{ .Description | default .Site.Params.Description }}">
+        <meta property="og:image" content="{{ .Params.image | default $defaultThumb }}" />
+        <meta property="og:url" content="{{ .Permalink }}">
+        <meta property="og:site_name" content="{{ .Site.Title }}">
+        
+        <!-- End Cards -->
+        
         <!-- Favicons -->
           <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png">
           <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png">

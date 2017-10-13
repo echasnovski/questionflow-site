@@ -7,7 +7,8 @@ GoogleAnalytics = "UA-107291782-1"
 
 [params]
     author = "Evgeni Chasnovski"
-    description = "Analysis workflow powered by questions"
+    description = "Answering data analysis questions powered by R workflow."
+    thumb = "default-thumb.png"
     githubUsername = "echasnovski"
     accent = "#000080"
     showBorder = false
@@ -19,6 +20,9 @@ GoogleAnalytics = "UA-107291782-1"
     js = ["/js/custom.r.min.js"]
     
     paginate = 10
+    
+    siteTwitter = "@questionflow"
+    authorTwitter = "@echasnovski"
     
 [permalinks]
     post = "/:year/:month/:day/:slug/"
