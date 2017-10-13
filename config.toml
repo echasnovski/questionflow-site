@@ -1,4 +1,4 @@
-baseURL = "/"
+baseURL = "http://www.questionflow.org/"
 languageCode = "en-us"
 title = "QuestionFlow"
 theme = "minimal"
