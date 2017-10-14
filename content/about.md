@@ -21,10 +21,12 @@ All content is released under a [Creative Commons Attribution-ShareAlike 4.0 Int
 
 For easy following site has its own [twitter](https://twitter.com/questionflow) account. 
 
-Site is built with the following software:
+Built with the following software:
 
 - [blogdown](https://github.com/rstudio/blogdown)
 - [Hugo](https://gohugo.io)
 - [Minimal](https://github.com/calintat/minimal) Hugo theme
 
-Site is deployed using [Netlify](https://www.netlify.com).
+Deployed using [Netlify](https://www.netlify.com).
+
+__QuestionFlow__ is contributing to [R-bloggers](https://www.r-bloggers.com/).

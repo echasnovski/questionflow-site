@@ -9,6 +9,7 @@ GoogleAnalytics = "UA-107291782-1"
     author = "Evgeni Chasnovski"
     description = "Answering data analysis questions powered by R workflow."
     thumb = "default-thumb.png"
+    copyright = "(C) Evgeni Chasnovski, CC BY-SA 4.0"
     githubUsername = "echasnovski"
     accent = "#000080"
     showBorder = false
