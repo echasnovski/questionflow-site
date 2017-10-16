@@ -17,7 +17,7 @@ GoogleAnalytics = "UA-107291782-1"
     font = "Ubuntu" # should match the name on Google Fonts!
     highlight = true
     highlightStyle = "idea"
-    highlightLanguages = ["yaml"]
+    highlightLanguages = ["yaml", "html", "javascript"]
     js = ["/js/custom.r.min.js"]
     
     paginate = 10

@@ -3,7 +3,9 @@
 
     <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/highlight.min.js"></script>
 
-    {{ range .Site.Params.highlightLanguages }} <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/languages/{{ . }}.min.js"></script> {{ end }}
+    {{ range .Site.Params.highlightLanguages }}
+      <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/languages/{{ . }}.min.js"></script>
+    {{ end }}
 
     <script>hljs.initHighlightingOnLoad();</script>
 
