@@ -14,8 +14,7 @@
               {{ range findRE "[1-2]" . 1 }}
                 {{ $head_level := (int .) }}
                 {{ $base := ($.Page.File.LogicalName) }}
-                {{ $anchorId := replaceRE "\\." "" $header }}
-                {{ $anchorId := ($anchorId | plainify | htmlEscape | urlize | safeURL) }}
+                {{ $anchorId := ($header | plainify | htmlEscape | urlize | safeURL) }}
                 <li><a href="#{{ $anchorId }}" class="toc-h{{ $head_level }}">
                     {{ $header | plainify | htmlEscape }}
                 </a></li>
