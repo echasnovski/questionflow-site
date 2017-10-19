@@ -1,0 +1,189 @@
+---
+title: Highlight the Pipe. Highlight.js
+author: Evgeni Chasnovski
+date: '2017-10-20'
+publishdate: '2017-10-20'
+slug: highlight-the-pipe-highlight-js
+categories: []
+tags:
+  - rstats
+  - highlightjs
+description: "Practical advices about customizing code highlighting on web pages with [highlight.js](https://highlightjs.org/)."
+---
+
+
+
+<div id="prologue" class="section level1">
+<h1>Prologue</h1>
+<p>While creating this site I had to encounter the topic of highlighting code on web pages. I decided to do that with the help of <a href="https://highlightjs.org/">highlight.js</a> functionality. After <a href="https://highlightjs.org/static/demo/">picking a style</a> with R in mind, I arrived to the following question: is there an easy way to highlight <a href="http://magrittr.tidyverse.org/reference/pipe.html">pipe operator</a> <code>%&gt;%</code> separately? As it turned out, the answer is “Yes”, but the journey through unexplored world of JavaScript was bumpy with a pleasant moment of meeting familiar name.</p>
+<p>So this post is about adding custom rules for code highlighting in <strong>highlight.js</strong>, taking string <code>%&gt;%</code> as an example.</p>
+</div>
+<div id="overview" class="section level1">
+<h1>Overview</h1>
+<p>The “Getting Started” part of <a href="https://highlightjs.org/usage/">Usage</a> page says that to start using <strong>highlight.js</strong> on a web page the following code should be executed:</p>
+<pre class="html"><code>&lt;link rel=&quot;stylesheet&quot; href=&quot;/path/to/styles/default.css&quot;&gt;
+&lt;script src=&quot;/path/to/highlight.pack.js&quot;&gt;&lt;/script&gt;
+&lt;script&gt;hljs.initHighlightingOnLoad();&lt;/script&gt;</code></pre>
+<p>The description is “This will find and highlight code inside of <code>&lt;pre&gt;&lt;code&gt;</code> tags; it tries to detect the language automatically. If automatic detection doesn’t work for you, you can specify the language in the class attribute:”</p>
+<pre class="html"><code>&lt;pre&gt;&lt;code class=&quot;html&quot;&gt;...&lt;/code&gt;&lt;/pre&gt;</code></pre>
+<p>So basically the process of highlighting the text inside <code>&lt;pre&gt;&lt;code&gt;...&lt;/code&gt;&lt;/pre&gt;</code> is the following:</p>
+<ul>
+<li>Detect language (either automatically or with <code>class</code> attribute inside <code>&lt;pre&gt;</code> or <code>&lt;code&gt;</code> tag).</li>
+<li>Apply some complicated parsing with functionality sourced from “/path/to/highlight.pack.js”. This will, based on predefined rules, wrap some parts of text with <code>&lt;span&gt;&lt;/span&gt;</code> tags and appropriate class.</li>
+<li>Apply CSS customization based on “/path/to/styles/default.css” file and classes of <code>&lt;span&gt;</code> tags created in the previous step.</li>
+</ul>
+<p>To be more specific with code, this site uses at the time of writing this post (with help of <a href="https://gohugo.io">Hugo</a> and <a href="https://github.com/calintat/minimal">Minimal theme</a>) the following code:</p>
+<pre class="html"><code>&lt;link rel=&quot;stylesheet&quot; href=&quot;//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/styles/idea.min.css&quot;&gt; 
+
+&lt;script src=&quot;//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/highlight.min.js&quot;&gt;&lt;/script&gt;
+
+&lt;script src=&quot;//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/languages/yaml.min.js&quot;&gt;&lt;/script&gt;
+&lt;script src=&quot;//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/languages/html.min.js&quot;&gt;&lt;/script&gt;
+&lt;script src=&quot;//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/languages/javascript.min.js&quot;&gt;&lt;/script&gt;
+
+&lt;script&gt;hljs.initHighlightingOnLoad();&lt;/script&gt;</code></pre>
+<p>The first block loads CSS code for “Idea” style, the second - JavaScript code for general <strong>highlight.js</strong> functionality, the third - code for parsing rules for specific languages (YAML and HTML) and the fourth initializes <strong>highlight.js</strong>. Basically, files <code>yaml.min.js</code>, <code>html.min.js</code> and <code>javascript.min.js</code> contain information about actual rules of code parsing.</p>
+</div>
+<div id="custom-parsing-rules" class="section level1">
+<h1>Custom parsing rules</h1>
+<p>The similar file but for R, with my custom indentation, looks like this:</p>
+<pre class="javascript"><code>hljs.registerLanguage(&quot;r&quot;,
+  function(e){
+    var r=&quot;([a-zA-Z]|\\.[a-zA-Z.])[a-zA-Z0-9._]*&quot;;
+    return{
+      c:[e.HCM,
+        {b:r,l:r, k:
+          {keyword:&quot;function if in break next repeat else for return switch while try tryCatch stop warning require library attach detach source setMethod setGeneric setGroupGeneric setClass ...&quot;,
+          literal:&quot;NULL NA TRUE FALSE T F Inf NaN NA_integer_|10 NA_real_|10 NA_character_|10 NA_complex_|10&quot;},
+        r:0},
+        {cN:&quot;number&quot;,b:&quot;0[xX][0-9a-fA-F]+[Li]?\\b&quot;,r:0},
+        {cN:&quot;number&quot;,b:&quot;\\d+(?:[eE][+\\-]?\\d*)?L\\b&quot;,r:0},
+        {cN:&quot;number&quot;,b:&quot;\\d+\\.(?!\\d)(?:i\\b)?&quot;,r:0},
+        {cN:&quot;number&quot;,b:&quot;\\d+(?:\\.\\d*)?(?:[eE][+\\-]?\\d*)?i?\\b&quot;,r:0},
+        {cN:&quot;number&quot;,b:&quot;\\.\\d+(?:[eE][+\\-]?\\d*)?i?\\b&quot;,r:0},
+        {b:&quot;`&quot;,e:&quot;`&quot;,r:0},
+        {cN:&quot;string&quot;,c:[e.BE],v:[{b:&#39;&quot;&#39;,e:&#39;&quot;&#39;},{b:&quot;&#39;&quot;,e:&quot;&#39;&quot;}]}
+      ]
+    }
+  }
+);</code></pre>
+<p>After first seeing this without indentation, as one string, I was a little bit intimidated. Fortunately, after some internet searching I found <a href="https://github.com/isagalaev/highlight.js/">highlight.js github repository</a> with very useful <code>src</code> directory. It contains subdirectories <code>languages</code> (for JavaScript rules like mentioned above) and <code>styles</code> (for styles’ CSS code).</p>
+<p>The file for parsing R code is <a href="https://github.com/isagalaev/highlight.js/blob/master/src/languages/r.js">src/languages/r.js</a>. Its core was written in the spring of 2012 by <a href="https://github.com/jcheng5">Joe Cheng</a>, creator of the <a href="https://shiny.rstudio.com/">Shiny</a> framework. Seeing familiar name during rough JavaScript journey somewhat cheered me up. After studying the code, many questions were answered:</p>
+<ul>
+<li>By default the following pieces of code can be manually highlighted: comment, string, number, keyword, literal (<code>TRUE</code>, <code>FALSE</code>, <code>NULL</code>, <code>NA</code>, etc.).</li>
+<li>Those one- and two-letter variables in code are just short versions of more understandable <code>className</code>, <code>begin</code>, <code>end</code>, <code>relevance</code>, etc.</li>
+<li>To add custom piece of code to highlight one should add appropriate class in the parsing rules. There is a thorough <a href="http://highlightjs.readthedocs.io/en/latest/index.html">highlight.js documentation</a> if you want to master the logic behind these rules. The most easy and understandable way of creating the rule is specifying regular expressions for beginning and ending of desired class. <strong>Note</strong> that if ending is omitted then it is just the regex for the class. For example:</li>
+</ul>
+<pre class="javascript"><code>{className: &quot;pipe&quot;, begin: &quot;%&gt;%&quot;, relevance: 0}</code></pre>
+<p>This code finds string <code>%&gt;%</code> and wraps it as <code>&lt;span class=&quot;hljs-pipe&quot;&gt;%&gt;%&lt;/span&gt;</code> (note prefix “hljs-”). About <code>relevance</code> argument one can read <a href="http://highlightjs.readthedocs.io/en/latest/language-guide.html#relevance">here</a>, as it is not very important for the current topic.</p>
+<p>With this knowledge one can create other interesting rules:</p>
+<pre class="javascript"><code>// Function parameters with good style as &#39;variable&#39; + &#39;space&#39; + &#39;=&#39; + &#39;space&#39;
+{className: &quot;fun-param&quot;, begin: &quot;([a-zA-Z]|\\.[a-zA-Z.])[a-zA-Z0-9._]*\\s+=\\s+&quot;, relevance: 0},
+
+// Assign operator with good style
+{className: &quot;assign&quot;, begin: &quot; &lt;- &quot;, relevance: 0},
+
+// Adding to class &#39;keyword&#39; the explicit use of function&#39;s package
+{className: &quot;keyword&quot;, begin: &quot;([a-zA-Z]|\\.[a-zA-Z.])[a-zA-Z0-9._]*::&quot;, relevance: 0},
+
+// Class for basic dplyr words with their scoped variants
+// Not included in this site highlighting rules
+{className: &quot;dplyr&quot;, begin: &quot;tibble|mutate|select|filter|summari[sz]e|arrange|group_by&quot;, end: &quot;[a-zA-Z0-9._]*&quot;, relevance: 0}</code></pre>
+<p>It is important to add these rules in the appropriate places, because they are processed sequentially, so order matters. The final version of this site’s rules for R looks like this (click to unfold the spoiler):</p>
+{{% spoiler id="custom_r_min_js" title="custom.r.min.js" %}}
+<pre class="javascript"><code>hljs.registerLanguage(&quot;r&quot;,
+  function(e){
+    var r=&quot;([a-zA-Z]|\\.[a-zA-Z.])[a-zA-Z0-9._]*&quot;;
+    return{
+      c:[e.HCM,
+        {cN:&quot;fun-param&quot;,b:&quot;([a-zA-Z]|\\.[a-zA-Z.])[a-zA-Z0-9._]*\\s+=\\s+&quot;,r:0},
+        {cN:&quot;pipe&quot;,b:&quot;%&gt;%&quot;,r:0},
+        {cN:&quot;assign&quot;,b:&quot; &lt;- &quot;,r:0},
+        {cN:&quot;keyword&quot;,b:&quot;([a-zA-Z]|\\.[a-zA-Z.])[a-zA-Z0-9._]*::&quot;,r:0},
+  //      {cN:&quot;dplyr&quot;,b:&quot;tibble|mutate|select|filter|summari[sz]e|arrange|group_by&quot;,e:&quot;[a-zA-Z0-9._]*&quot;,r:0},
+        {b:r,l:r, k:
+          {keyword:&quot;function if in break next repeat else for return switch while try tryCatch stop warning require library attach detach source setMethod setGeneric setGroupGeneric setClass ...&quot;,
+          literal:&quot;NULL NA TRUE FALSE T F Inf NaN NA_integer_|10 NA_real_|10 NA_character_|10 NA_complex_|10&quot;},
+        r:0},
+        {cN:&quot;number&quot;,b:&quot;0[xX][0-9a-fA-F]+[Li]?\\b&quot;,r:0},
+        {cN:&quot;number&quot;,b:&quot;\\d+(?:[eE][+\\-]?\\d*)?L\\b&quot;,r:0},
+        {cN:&quot;number&quot;,b:&quot;\\d+\\.(?!\\d)(?:i\\b)?&quot;,r:0},
+        {cN:&quot;number&quot;,b:&quot;\\d+(?:\\.\\d*)?(?:[eE][+\\-]?\\d*)?i?\\b&quot;,r:0},
+        {cN:&quot;number&quot;,b:&quot;\\.\\d+(?:[eE][+\\-]?\\d*)?i?\\b&quot;,r:0},
+        {b:&quot;`&quot;,e:&quot;`&quot;,r:0},
+        {cN:&quot;string&quot;,c:[e.BE],v:[{b:&#39;&quot;&#39;,e:&#39;&quot;&#39;},{b:&quot;&#39;&quot;,e:&quot;&#39;&quot;}]}
+      ]
+    }
+  }
+);</code></pre>
+{{% /spoiler %}}
+<p>This code should be sourced on every page with highlighting. For this to be done with Hugo:</p>
+<ul>
+<li>Save this code into file <code>static/js/custom.r.min.js</code>.</li>
+<li>Add the following line to the head of every web page (usually by modifying partial template for page’s header):</li>
+</ul>
+<pre class="html"><code>&lt;script src=&quot;/js/custom.r.min.js&quot;&gt;&lt;/script&gt; </code></pre>
+</div>
+<div id="custom-style" class="section level1">
+<h1>Custom style</h1>
+<p>Styling of the parsed code is done with CSS, so some knowledge of it is needed. This is done by properly adding CSS rules to every page with highlighting. For example, this site’s CSS rules for specifically R code highlighting look like this:</p>
+<pre class="css"><code>/* Set colour for function parameters */
+.hljs-fun-param {
+    color: #ff4000;
+}
+
+/* Make the pipe and assign operator bold */
+.hljs-pipe, .hljs-assign {
+    font-weight: bold;
+}</code></pre>
+<p>The result looks like this:</p>
+<pre class="r"><code># R comment with %&gt;% and &lt;- .
+iris_summary &lt;- iris %&gt;%
+  dplyr::group_by(Species) %&gt;%
+  dplyr::summarise(meanSepalLength = mean(Sepal.Length))
+
+starts_with_str &lt;-function(x=c(&quot; %&gt;% &quot;, &quot; &lt;- &quot;)) {
+  paste0(&quot;Starts with&quot;, x)
+}</code></pre>
+<p>Notice the following:</p>
+<ul>
+<li>Strings <code>%&gt;%</code> and <code>&lt;-</code> are not specially highlighted inside comment or string.</li>
+<li>Use of <code>dplyr::</code> is highlighted the same as keyword <code>function</code>.</li>
+<li>Strings <code>=</code> (in function parameters) and <code>&lt;-</code> should be surrounded by spaces (for which styling is also applied) to be correctly highlighted. This encourages <a href="http://style.tidyverse.org/syntax.html#spacing">tidyverse style guide</a>.</li>
+</ul>
+</div>
+<div id="conclusions" class="section level1">
+<h1>Conclusions</h1>
+<ul>
+<li>Asking questions about seemingly simple task can lead to the long journey of code exploration.</li>
+<li>Meeting familiar names during times of trouble can be inspiring.</li>
+<li>Creating custom rules for code highlighting with <strong>highlight.js</strong> is pretty straightforward for R people (after some JavaScript and CSS adjusting).</li>
+</ul>
+{{% spoiler id="sessionInfo" title="sessionInfo()" %}}
+<pre class="r"><code>sessionInfo()
+## R version 3.4.2 (2017-09-28)
+## Platform: x86_64-pc-linux-gnu (64-bit)
+## Running under: Ubuntu 16.04.3 LTS
+## 
+## Matrix products: default
+## BLAS: /usr/lib/libblas/libblas.so.3.6.0
+## LAPACK: /usr/lib/lapack/liblapack.so.3.6.0
+## 
+## locale:
+##  [1] LC_CTYPE=ru_UA.UTF-8       LC_NUMERIC=C              
+##  [3] LC_TIME=ru_UA.UTF-8        LC_COLLATE=ru_UA.UTF-8    
+##  [5] LC_MONETARY=ru_UA.UTF-8    LC_MESSAGES=ru_UA.UTF-8   
+##  [7] LC_PAPER=ru_UA.UTF-8       LC_NAME=C                 
+##  [9] LC_ADDRESS=C               LC_TELEPHONE=C            
+## [11] LC_MEASUREMENT=ru_UA.UTF-8 LC_IDENTIFICATION=C       
+## 
+## attached base packages:
+## [1] methods   stats     graphics  grDevices utils     datasets  base     
+## 
+## loaded via a namespace (and not attached):
+##  [1] compiler_3.4.2  backports_1.1.0 bookdown_0.5    magrittr_1.5   
+##  [5] rprojroot_1.2   tools_3.4.2     htmltools_0.3.6 yaml_2.1.14    
+##  [9] Rcpp_0.12.12    stringi_1.1.5   rmarkdown_1.6   blogdown_0.1   
+## [13] knitr_1.17      stringr_1.2.0   digest_0.6.12   evaluate_0.10.1</code></pre>
+{{% /spoiler %}}
+</div>

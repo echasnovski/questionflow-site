@@ -1,0 +1,214 @@
+---
+title: Highlight the Pipe. Highlight.js
+author: Evgeni Chasnovski
+date: '2017-10-20'
+publishdate: '2017-10-20'
+slug: highlight-the-pipe-highlight-js
+categories: []
+tags:
+  - rstats
+  - highlightjs
+description: "Practical advices about customizing code highlighting on web pages with [highlight.js](https://highlightjs.org/)."
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  eval = FALSE,
+  collapse = TRUE
+)
+```
+
+# Prologue
+
+While creating this site I had to encounter the topic of highlighting code on web pages. I decided to do that with the help of [highlight.js](https://highlightjs.org/) functionality. After [picking a style](https://highlightjs.org/static/demo/) with R in mind, I arrived to the following question: is there an easy way to highlight [pipe operator](http://magrittr.tidyverse.org/reference/pipe.html) `%>%` separately? As it turned out, the answer is "Yes", but the journey through unexplored world of JavaScript was bumpy with a pleasant moment of meeting familiar name.
+
+So this post is about adding custom rules for code highlighting in __highlight.js__, taking string `%>%` as an example.
+
+# Overview
+
+The "Getting Started" part of [Usage](https://highlightjs.org/usage/) page says that to start using __highlight.js__ on a web page the following code should be executed:
+
+```{html highlight.js usage 1}
+<link rel="stylesheet" href="/path/to/styles/default.css">
+<script src="/path/to/highlight.pack.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+```
+
+The description is "This will find and highlight code inside of `<pre><code>` tags; it tries to detect the language automatically. If automatic detection doesn’t work for you, you can specify the language in the class attribute:"
+
+```{html highlight.js usage 2}
+<pre><code class="html">...</code></pre>
+```
+
+So basically the process of highlighting the text inside `<pre><code>...</code></pre>` is the following:
+
+- Detect language (either automatically or with `class` attribute inside `<pre>` or `<code>` tag).
+- Apply some complicated parsing with functionality sourced from "/path/to/highlight.pack.js". This will, based on predefined rules, wrap some parts of text with `<span></span>` tags and appropriate class.
+- Apply CSS customization based on "/path/to/styles/default.css" file and classes of `<span>` tags created in the previous step.
+
+To be more specific with code, this site uses at the time of writing this post (with help of [Hugo](https://gohugo.io) and [Minimal theme](https://github.com/calintat/minimal)) the following code:
+
+```{html highlight.js at questionflow.org}
+<link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/styles/idea.min.css"> 
+
+<script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/highlight.min.js"></script>
+
+<script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/languages/yaml.min.js"></script>
+<script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/languages/html.min.js"></script>
+<script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/languages/javascript.min.js"></script>
+
+<script>hljs.initHighlightingOnLoad();</script>
+```
+
+The first block loads CSS code for "Idea" style, the second - JavaScript code for general __highlight.js__ functionality, the third - code for parsing rules for specific languages (YAML and HTML) and the fourth initializes __highlight.js__. Basically, files `yaml.min.js`, `html.min.js` and `javascript.min.js` contain information about actual rules of code parsing.
+
+# Custom parsing rules
+
+The similar file but for R, with my custom indentation, looks like this:
+
+```{javascript r.min.js}
+hljs.registerLanguage("r",
+  function(e){
+    var r="([a-zA-Z]|\\.[a-zA-Z.])[a-zA-Z0-9._]*";
+    return{
+      c:[e.HCM,
+        {b:r,l:r, k:
+          {keyword:"function if in break next repeat else for return switch while try tryCatch stop warning require library attach detach source setMethod setGeneric setGroupGeneric setClass ...",
+          literal:"NULL NA TRUE FALSE T F Inf NaN NA_integer_|10 NA_real_|10 NA_character_|10 NA_complex_|10"},
+        r:0},
+        {cN:"number",b:"0[xX][0-9a-fA-F]+[Li]?\\b",r:0},
+        {cN:"number",b:"\\d+(?:[eE][+\\-]?\\d*)?L\\b",r:0},
+        {cN:"number",b:"\\d+\\.(?!\\d)(?:i\\b)?",r:0},
+        {cN:"number",b:"\\d+(?:\\.\\d*)?(?:[eE][+\\-]?\\d*)?i?\\b",r:0},
+        {cN:"number",b:"\\.\\d+(?:[eE][+\\-]?\\d*)?i?\\b",r:0},
+        {b:"`",e:"`",r:0},
+        {cN:"string",c:[e.BE],v:[{b:'"',e:'"'},{b:"'",e:"'"}]}
+      ]
+    }
+  }
+);
+```
+
+After first seeing this without indentation, as one string, I was a little bit intimidated. Fortunately, after some internet searching I found [highlight.js github repository](https://github.com/isagalaev/highlight.js/) with very useful `src` directory. It contains subdirectories `languages` (for JavaScript rules like mentioned above) and `styles` (for styles' CSS code).
+
+The file for parsing R code is [src/languages/r.js](https://github.com/isagalaev/highlight.js/blob/master/src/languages/r.js). Its core was written in the spring of 2012 by [Joe Cheng](https://github.com/jcheng5), creator of the [Shiny](https://shiny.rstudio.com/) framework. Seeing familiar name during rough JavaScript journey somewhat cheered me up. After studying the code, many questions were answered:
+
+- By default the following pieces of code can be manually highlighted: comment, string, number, keyword, literal (`TRUE`, `FALSE`, `NULL`, `NA`, etc.).
+- Those one- and two-letter variables in code are just short versions of more understandable `className`, `begin`, `end`, `relevance`, etc.
+- To add custom piece of code to highlight one should add appropriate class in the parsing rules. There is a thorough [highlight.js documentation](http://highlightjs.readthedocs.io/en/latest/index.html) if you want to master the logic behind these rules. The most easy and understandable way of creating the rule is specifying regular expressions for beginning and ending of desired class. __Note__ that if ending is omitted then it is just the regex for the class. For example:
+
+```{javascript Custom highlight.js pipe rule}
+{className: "pipe", begin: "%>%", relevance: 0}
+```
+
+This code finds string `%>%` and wraps it as `<span class="hljs-pipe">%>%</span>` (note prefix "hljs-"). About `relevance` argument one can read [here](http://highlightjs.readthedocs.io/en/latest/language-guide.html#relevance), as it is not very important for the current topic.
+
+With this knowledge one can create other interesting rules:
+
+```{javascript Custom highlight.js rules}
+// Function parameters with good style as 'variable' + 'space' + '=' + 'space'
+{className: "fun-param", begin: "([a-zA-Z]|\\.[a-zA-Z.])[a-zA-Z0-9._]*\\s+=\\s+", relevance: 0},
+
+// Assign operator with good style
+{className: "assign", begin: " <- ", relevance: 0},
+
+// Adding to class 'keyword' the explicit use of function's package
+{className: "keyword", begin: "([a-zA-Z]|\\.[a-zA-Z.])[a-zA-Z0-9._]*::", relevance: 0},
+
+// Class for basic dplyr words with their scoped variants
+// Not included in this site highlighting rules
+{className: "dplyr", begin: "tibble|mutate|select|filter|summari[sz]e|arrange|group_by", end: "[a-zA-Z0-9._]*", relevance: 0}
+```
+
+It is important to add these rules in the appropriate places, because they are processed sequentially, so order matters. The final version of this site's rules for R looks like this (click to unfold the spoiler):
+
+`r blogdown::shortcode("spoiler", id = '\"custom_r_min_js\"', title = '\"custom.r.min.js\"')`
+
+```{javascript custom.r.min.js}
+hljs.registerLanguage("r",
+  function(e){
+    var r="([a-zA-Z]|\\.[a-zA-Z.])[a-zA-Z0-9._]*";
+    return{
+      c:[e.HCM,
+        {cN:"fun-param",b:"([a-zA-Z]|\\.[a-zA-Z.])[a-zA-Z0-9._]*\\s+=\\s+",r:0},
+        {cN:"pipe",b:"%>%",r:0},
+        {cN:"assign",b:" <- ",r:0},
+        {cN:"keyword",b:"([a-zA-Z]|\\.[a-zA-Z.])[a-zA-Z0-9._]*::",r:0},
+  //      {cN:"dplyr",b:"tibble|mutate|select|filter|summari[sz]e|arrange|group_by",e:"[a-zA-Z0-9._]*",r:0},
+        {b:r,l:r, k:
+          {keyword:"function if in break next repeat else for return switch while try tryCatch stop warning require library attach detach source setMethod setGeneric setGroupGeneric setClass ...",
+          literal:"NULL NA TRUE FALSE T F Inf NaN NA_integer_|10 NA_real_|10 NA_character_|10 NA_complex_|10"},
+        r:0},
+        {cN:"number",b:"0[xX][0-9a-fA-F]+[Li]?\\b",r:0},
+        {cN:"number",b:"\\d+(?:[eE][+\\-]?\\d*)?L\\b",r:0},
+        {cN:"number",b:"\\d+\\.(?!\\d)(?:i\\b)?",r:0},
+        {cN:"number",b:"\\d+(?:\\.\\d*)?(?:[eE][+\\-]?\\d*)?i?\\b",r:0},
+        {cN:"number",b:"\\.\\d+(?:[eE][+\\-]?\\d*)?i?\\b",r:0},
+        {b:"`",e:"`",r:0},
+        {cN:"string",c:[e.BE],v:[{b:'"',e:'"'},{b:"'",e:"'"}]}
+      ]
+    }
+  }
+);
+```
+
+`r blogdown::shortcode("/spoiler")`
+
+This code should be sourced on every page with highlighting. For this to be done with Hugo:
+
+- Save this code into file `static/js/custom.r.min.js`.
+- Add the following line to the head of every web page (usually by modifying partial template for page's header):
+
+```{html Source custom.r.min.js}
+<script src="/js/custom.r.min.js"></script> 
+```
+
+
+# Custom style
+
+Styling of the parsed code is done with CSS, so some knowledge of it is needed. This is done by properly adding CSS rules to every page with highlighting. For example, this site's CSS rules for specifically R code highlighting look like this:
+
+```{css R code CSS}
+/* Set colour for function parameters */
+.hljs-fun-param {
+    color: #ff4000;
+}
+
+/* Make the pipe and assign operator bold */
+.hljs-pipe, .hljs-assign {
+    font-weight: bold;
+}
+```
+
+The result looks like this:
+
+```{r R code example}
+# R comment with %>% and <- .
+iris_summary <- iris %>%
+  dplyr::group_by(Species) %>%
+  dplyr::summarise(meanSepalLength = mean(Sepal.Length))
+
+starts_with_str <-function(x=c(" %>% ", " <- ")) {
+  paste0("Starts with", x)
+}
+```
+
+Notice the following:
+
+- Strings `%>%` and ` <- ` are not specially highlighted inside comment or string.
+- Use of `dplyr::` is highlighted the same as keyword `function`.
+- Strings `=` (in function parameters) and `<-` should be surrounded by spaces (for which styling is also applied) to be correctly highlighted. This encourages [tidyverse style guide](http://style.tidyverse.org/syntax.html#spacing).
+
+# Conclusions
+
+- Asking questions about seemingly simple task can lead to the long journey of code exploration.
+- Meeting familiar names during times of trouble can be inspiring.
+- Creating custom rules for code highlighting with __highlight.js__ is pretty straightforward for R people (after some JavaScript and CSS adjusting).
+
+`r blogdown::shortcode("spoiler", id = '\"sessionInfo\"', title = '\"sessionInfo()\"')`
+
+```{r sessionInfo, eval = TRUE}
+sessionInfo()
+```
+
+`r blogdown::shortcode("/spoiler")`
