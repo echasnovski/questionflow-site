@@ -1,0 +1,184 @@
+---
+title: Highlight the Pipe. Pkgdown
+author: Evgeni Chasnovski
+date: '2017-10-29'
+publishdate: '2017-10-29'
+slug: highlight-the-pipe-pkgdown
+categories: []
+tags:
+  - rstats
+  - pkgdown
+description: "Practical advices about customizing code highlighting on web pages created with __pkgdown__."
+---
+
+
+
+<div id="prologue" class="section level1">
+<h1>Prologue</h1>
+<p>It felt really nice to achieve custom code highlighting on this site with <a href="https://highlightjs.org/">highlight.js</a> (see <a href="{{< relref "2017-10-20-highlight-the-pipe-highlight-js.html" >}}">this post</a>). After that, I found myself working with <a href="http://hadley.github.io/pkgdown/">pkgdown</a>, one of many great Hadley’s packages. It is “designed to make it quick and easy to build a website for your package”. It converts all package documentation into appropriate HTML pages. Naturally, I had the same question as before: is there an easy way to highlight <a href="http://magrittr.tidyverse.org/reference/pipe.html">pipe operator</a> <code>%&gt;%</code> separately? This time the best answer I was able to come up with was “Yes, if you don’t mind some hacking.”</p>
+<p>This post is about adding custom rules for code highlighting for <strong>pkgdown</strong> site, taking string <code>%&gt;%</code> as an example.</p>
+</div>
+<div id="overview" class="section level1">
+<h1>Overview</h1>
+<p>After looking into HTML code of site built with <code>pkgdown</code>, I noticed next key features of code highlighting:</p>
+<ul>
+<li>Text is already parsed with appropriate strings wrapped in <code>&lt;span&gt;&lt;/span&gt;</code>. This is done during building site with <code>pkgdown::build_site()</code>. Class attribute of <code>&lt;span&gt;</code> is used to customize highlighting.</li>
+<li>Code from reference pages is processed differently. For example, function <code>mean</code> is wrapped as <code>&lt;span class=&quot;kw&quot;&gt;mean&lt;/span&gt;</code> in Home page but <code>&lt;span class='fu'&gt;mean&lt;/span&gt;</code> in Reference.</li>
+<li>The most valuable feature of code preprocessing is creating links to appropriate help pages for R functions. This is done with adding <code>&lt;a&gt;</code> tag inside <code>&lt;span&gt;</code> for certain function name.</li>
+</ul>
+<p>So the default method of customising code highlighting in <code>pkgdown</code> is to define CSS styles for present classes (which are essentially different across site).</p>
+<p>To highlight certain strings, such as <code>%&gt;%</code>, one should parse HTML for certain <code>&lt;span&gt;</code> tags inside <code>&lt;pre&gt;</code> node (tag for preformatted text used for separate code blocks) and add appropriate class for further CSS customisation. This path is described in <a href="{{< relref "#with-adding-tag-class" >}}">With adding tag class</a>.</p>
+<p>Although this method solves the problem of highlighting the <code>%&gt;%</code>, it is somewhat constrained: one can’t customize parsing rules. For example, there is no easy way to highlight <code>&lt;-</code> differently because it is not wrapped in <code>&lt;span&gt;</code>. I thought it would be better to reuse the existing solution with <strong>highlight.js</strong>, but I didn’t consider this path for some time because of preformatted nature of code (unlike my previous experience) and concerns about function links to disappear. However, after manually adding necessary JavaScript code, it worked! Well, kind of: reference pages were not highlighted. The good news was that links stayed in place. How to add appropriate JavaScript code to <code>pkgdown</code> site and deal with reference pages is described in <a href="{{< relref "#with-highlight.js" >}}">With highlight.js</a></p>
+<p>All code and short version of how to use it is placed in my <a href="https://github.com/echasnovski/highdown">highdown</a> package.</p>
+</div>
+<div id="with-adding-tag-class" class="section level1">
+<h1>With adding tag class</h1>
+<p>The plan is pretty straightforward:</p>
+<ul>
+<li>Find all HTML pages to add tag classes.</li>
+<li>At each page find appropriate tags, i.e. <code>&lt;span&gt;</code> inside <code>&lt;pre&gt;</code> with text satisfying desired condition.</li>
+<li>Add certain class to that tags.</li>
+<li>Modify CSS file.</li>
+</ul>
+<div id="add-class" class="section level2">
+<h2>Add class</h2>
+<p>The following functions do the job of adding class to appropriate tags. Package <a href="https://cran.r-project.org/web/packages/xml2/index.html">xml2</a> should be installed.</p>
+<p>Main function arguments are:</p>
+<ul>
+<li><code>xpath</code> - String containing an xpath (1.0) expression (use <code>&quot;//pre//span&quot;</code> for code highlighting tags).</li>
+<li><code>pattern</code> - Regular expression for tags’ text of interest.</li>
+<li><code>new_class</code> - String for class to add.</li>
+<li><code>path</code> - Path to folder with html files (default to “docs”).</li>
+</ul>
+<pre class="r"><code>xml_add_class_pattern &lt;- function(xpath, pattern, new_class, path = &quot;docs&quot;) {
+  # Find HTML pages
+  html_files &lt;- list.files(
+    path = &quot;docs&quot;,
+    pattern = &quot;\\.html&quot;,
+    recursive = TRUE,
+    full.names = TRUE
+  )
+
+  lapply(html_files, function(file) {
+    page &lt;- xml2::read_html(file, encoding = &quot;UTF-8&quot;)
+
+    matched_nodes &lt;- xml_find_all_patterns(page, xpath, pattern)
+    if (length(matched_nodes) == 0) {
+      return(NA)
+    }
+
+    xml_add_class(matched_nodes, new_class)
+
+    xml2::write_html(page, file, format = FALSE)
+  })
+
+  invisible(html_files)
+}
+
+# Add class `new_class` to nodes
+xml_add_class &lt;- function(x, new_class) {
+  output_class &lt;- paste(xml2::xml_attr(x, &quot;class&quot;), new_class)
+  mapply(xml2::xml_set_attr, x, output_class, MoreArgs = list(attr = &quot;class&quot;))
+
+  invisible(x)
+}
+
+# Find appropriate tags
+# To find &lt;span&gt; inside &lt;pre&gt; use `xpath = &quot;\\pre\\span&quot;`.
+xml_find_all_patterns &lt;- function(x, xpath, pattern, ns = xml2::xml_ns(x)) {
+  res &lt;- xml2::xml_find_all(x, xpath, ns)
+  is_matched &lt;- grepl(pattern, xml2::xml_text(res))
+
+  res[is_matched]
+}</code></pre>
+<p>For convenience one can define function <code>high_pipe()</code> for adding class <code>pp</code> to all <code>&lt;span&gt;</code> inside <code>&lt;pre&gt;</code> with text containing <code>%&gt;%</code>:</p>
+<pre class="r"><code>high_pipe &lt;- function(path = &quot;docs&quot;, new_class = &quot;pp&quot;) {
+  xml_add_class_pattern(&quot;//pre//span&quot;, &quot;%&gt;%&quot;, new_class, path)
+}</code></pre>
+<p>So typical usage is as follows:</p>
+<ul>
+<li>Run <code>pkgdown::build_site()</code>.</li>
+<li>Run <code>highdown::high_pipe()</code> (with working directory being package root).</li>
+</ul>
+</div>
+<div id="add-custom-css-rules" class="section level2">
+<h2>Add custom CSS rules</h2>
+<p>For adding custom CSS rules in <code>pkgdown</code> site create file <code>pkgdown/extra.css</code> in package root and edit it. For example, to make <code>%&gt;%</code> bold write the following:</p>
+<pre class="css"><code>.pp {font-weight: bold;}</code></pre>
+</div>
+</div>
+<div id="with-highlight.js" class="section level1">
+<h1>With highlight.js</h1>
+<p><strong>Highlight.js</strong> enables more flexible code highlighting. For its overview and customization see <a href="{{< relref "2017-10-20-highlight-the-pipe-highlight-js.html" >}}">my previous post</a>.</p>
+<div id="add-custom-javascript" class="section level2">
+<h2>Add custom JavaScript</h2>
+<p>To add custom JavaScript code to <code>pkgdown</code> site one should create and modify file <code>pkgdown/extra.js</code> in package root. Go <a href="https://github.com/echasnovski/highdown/blob/master/inst/extra.js">here</a> for code that initializes <strong>highlight.js</strong> and registers default R language parsing rules.</p>
+</div>
+<div id="tweak-reference-page" class="section level2">
+<h2>Tweak reference page</h2>
+<p>For <strong>highlight.js</strong> to work, code should be wrapped in <code>&lt;pre&gt;&lt;span class=&quot;r&quot;&gt;</code> tags. However, reference pages use only <code>&lt;pre&gt;</code>. To tweak these pages use the following function (with working directory being package root):</p>
+<pre class="r"><code>tweak_ref_pages &lt;- function() {
+  # Find all reference pages
+  ref_files &lt;- list.files(
+    path = &quot;docs/reference/&quot;,
+    pattern = &quot;\\.html&quot;,
+    recursive = TRUE,
+    full.names = TRUE
+  )
+
+  lapply(ref_files, add_code_node)
+
+  invisible(ref_files)
+}
+
+add_code_node &lt;- function(x) {
+  page &lt;- paste0(readLines(x), collapse = &quot;\n&quot;)
+
+  # Regular expression magic for adding &lt;code class = &quot;r&quot;&gt;&lt;/code&gt;
+  page &lt;- gsub(&#39;(&lt;pre.*?&gt;)&#39;, &#39;\\1&lt;code class = &quot;r&quot;&gt;&#39;, page)
+  page &lt;- gsub(&#39;&lt;\\/pre&gt;&#39;, &#39;&lt;\\/code&gt;&lt;\\/pre&gt;&#39;, page)
+
+  invisible(writeLines(page, x))
+}</code></pre>
+<p><strong>Note</strong> that as for 2017-10-27 this still can cause incorrect highlighting if some actual code is placed just after comment.</p>
+</div>
+<div id="add-highlight.js-css-rules" class="section level2">
+<h2>Add highlight.js CSS rules</h2>
+<p>Edit <code>pkgdown/extra.css</code> for <strong>highlight.js</strong> classes. For template with <a href="https://github.com/isagalaev/highlight.js/blob/master/src/styles/idea.css">Idea</a> style along with R default classes look <a href="https://github.com/echasnovski/highdown/blob/master/inst/extra.css">here</a>.</p>
+</div>
+</div>
+<div id="conclusions" class="section level1">
+<h1>Conclusions</h1>
+<ul>
+<li>It is confirmed that asking questions about seemingly simple task can lead to the long journey of code exploration and hacking.</li>
+<li>At first try to find a way to reuse existing solutions, if they satisfy your needs. It can save considerable amount of time in the future.</li>
+<li>With <a href="https://github.com/echasnovski/highdown">highdown</a> it is straightforward to customise code highlighting of <code>pkgdown</code> sites.</li>
+</ul>
+{{% spoiler id="sessionInfo" title="sessionInfo()" %}}
+<pre class="r"><code>sessionInfo()
+## R version 3.4.2 (2017-09-28)
+## Platform: x86_64-pc-linux-gnu (64-bit)
+## Running under: Ubuntu 16.04.3 LTS
+## 
+## Matrix products: default
+## BLAS: /usr/lib/libblas/libblas.so.3.6.0
+## LAPACK: /usr/lib/lapack/liblapack.so.3.6.0
+## 
+## locale:
+##  [1] LC_CTYPE=ru_UA.UTF-8       LC_NUMERIC=C              
+##  [3] LC_TIME=ru_UA.UTF-8        LC_COLLATE=ru_UA.UTF-8    
+##  [5] LC_MONETARY=ru_UA.UTF-8    LC_MESSAGES=ru_UA.UTF-8   
+##  [7] LC_PAPER=ru_UA.UTF-8       LC_NAME=C                 
+##  [9] LC_ADDRESS=C               LC_TELEPHONE=C            
+## [11] LC_MEASUREMENT=ru_UA.UTF-8 LC_IDENTIFICATION=C       
+## 
+## attached base packages:
+## [1] methods   stats     graphics  grDevices utils     datasets  base     
+## 
+## loaded via a namespace (and not attached):
+##  [1] compiler_3.4.2  backports_1.1.1 bookdown_0.5    magrittr_1.5   
+##  [5] rprojroot_1.2   tools_3.4.2     htmltools_0.3.6 yaml_2.1.14    
+##  [9] Rcpp_0.12.13    stringi_1.1.5   rmarkdown_1.6   blogdown_0.1   
+## [13] knitr_1.17      stringr_1.2.0   digest_0.6.12   evaluate_0.10.1</code></pre>
+{{% /spoiler %}}
+</div>

@@ -1,0 +1,185 @@
+---
+title: Highlight the Pipe. Pkgdown
+author: Evgeni Chasnovski
+date: '2017-10-29'
+publishdate: '2017-10-29'
+slug: highlight-the-pipe-pkgdown
+categories: []
+tags:
+  - rstats
+  - pkgdown
+description: "Practical advices about customizing code highlighting on web pages created with __pkgdown__."
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  eval = FALSE,
+  collapse = TRUE
+)
+```
+
+# Prologue
+
+It felt really nice to achieve custom code highlighting on this site with [highlight.js](https://highlightjs.org/) (see [this post](`r blogdown::shortcode(.name = "relref", '\"2017-10-20-highlight-the-pipe-highlight-js.html\"', .type = "html")`)). After that, I found myself working with [pkgdown](http://hadley.github.io/pkgdown/), one of many great Hadley's packages. It is "designed to make it quick and easy to build a website for your package". It converts all package documentation into appropriate HTML pages. Naturally, I had the same question as before: is there an easy way to highlight [pipe operator](http://magrittr.tidyverse.org/reference/pipe.html) `%>%` separately? This time the best answer I was able to come up with was "Yes, if you don't mind some hacking."
+
+This post is about adding custom rules for code highlighting for __pkgdown__ site, taking string `%>%` as an example.
+
+# Overview
+
+After looking into HTML code of site built with `pkgdown`, I noticed next key features of code highlighting:
+
+- Text is already parsed with appropriate strings wrapped in `<span></span>`. This is done during building site with `pkgdown::build_site()`. Class attribute of `<span>` is used to customize highlighting.
+- Code from reference pages is processed differently. For example, function `mean` is wrapped as `<span class="kw">mean</span>` in Home page but `<span class='fu'>mean</span>` in Reference.
+- The most valuable feature of code preprocessing is creating links to appropriate help pages for R functions. This is done with adding `<a>` tag inside `<span>` for certain function name.
+
+So the default method of customising code highlighting in `pkgdown` is to define CSS styles for present classes (which are essentially different across site).
+
+To highlight certain strings, such as `%>%`, one should parse HTML for certain `<span>` tags inside `<pre>` node (tag for preformatted text used for separate code blocks) and add appropriate class for further CSS customisation. This path is described in [With adding tag class](`r blogdown::shortcode(.name = "relref", '\"#with-adding-tag-class\"', .type = "html")`).
+
+Although this method solves the problem of highlighting the `%>%`, it is somewhat constrained: one can't customize parsing rules. For example, there is no easy way to highlight `<-` differently because it is not wrapped in `<span>`. I thought it would be better to reuse the existing solution with __highlight.js__, but I didn't consider this path for some time because of preformatted nature of code (unlike my previous experience) and concerns about function links to disappear. However, after manually adding necessary JavaScript code, it worked! Well, kind of: reference pages were not highlighted. The good news was that links stayed in place. How to add appropriate JavaScript code to `pkgdown` site and deal with reference pages is described in [With highlight.js](`r blogdown::shortcode(.name = "relref", '\"#with-highlight.js\"', .type = "html")`)
+
+All code and short version of how to use it is placed in my [highdown](https://github.com/echasnovski/highdown) package.
+
+# With adding tag class
+
+The plan is pretty straightforward:
+
+- Find all HTML pages to add tag classes.
+- At each page find appropriate tags, i.e. `<span>` inside `<pre>` with text satisfying desired condition.
+- Add certain class to that tags.
+- Modify CSS file.
+
+## Add class
+
+The following functions do the job of adding class to appropriate tags. Package [xml2](https://cran.r-project.org/web/packages/xml2/index.html) should be installed.
+
+Main function arguments are:
+
+- `xpath` - String containing an xpath (1.0) expression (use `"//pre//span"` for code highlighting tags).
+- `pattern` - Regular expression for tags' text of interest.
+- `new_class` - String for class to add.
+- `path` - Path to folder with html files (default to "docs").
+
+```{r Add tag class code}
+xml_add_class_pattern <- function(xpath, pattern, new_class, path = "docs") {
+  # Find HTML pages
+  html_files <- list.files(
+    path = "docs",
+    pattern = "\\.html",
+    recursive = TRUE,
+    full.names = TRUE
+  )
+
+  lapply(html_files, function(file) {
+    page <- xml2::read_html(file, encoding = "UTF-8")
+
+    matched_nodes <- xml_find_all_patterns(page, xpath, pattern)
+    if (length(matched_nodes) == 0) {
+      return(NA)
+    }
+
+    xml_add_class(matched_nodes, new_class)
+
+    xml2::write_html(page, file, format = FALSE)
+  })
+
+  invisible(html_files)
+}
+
+# Add class `new_class` to nodes
+xml_add_class <- function(x, new_class) {
+  output_class <- paste(xml2::xml_attr(x, "class"), new_class)
+  mapply(xml2::xml_set_attr, x, output_class, MoreArgs = list(attr = "class"))
+
+  invisible(x)
+}
+
+# Find appropriate tags
+# To find <span> inside <pre> use `xpath = "\\pre\\span"`.
+xml_find_all_patterns <- function(x, xpath, pattern, ns = xml2::xml_ns(x)) {
+  res <- xml2::xml_find_all(x, xpath, ns)
+  is_matched <- grepl(pattern, xml2::xml_text(res))
+
+  res[is_matched]
+}
+```
+
+For convenience one can define function `high_pipe()` for adding class `pp` to all `<span>` inside `<pre>` with text containing `%>%`:
+
+```{r high_pipe}
+high_pipe <- function(path = "docs", new_class = "pp") {
+  xml_add_class_pattern("//pre//span", "%>%", new_class, path)
+}
+```
+
+So typical usage is as follows:
+
+- Run `pkgdown::build_site()`.
+- Run `highdown::high_pipe()` (with working directory being package root).
+
+## Add custom CSS rules
+
+For adding custom CSS rules in `pkgdown` site create file `pkgdown/extra.css` in package root and edit it. For example, to make `%>%` bold write the following:
+
+```{css high_pipe CSS}
+.pp {font-weight: bold;}
+```
+
+
+# With highlight.js
+
+__Highlight.js__ enables more flexible code highlighting. For its overview and customization see [my previous post](`r blogdown::shortcode(.name = "relref", '\"2017-10-20-highlight-the-pipe-highlight-js.html\"', .type = "html")`).
+
+## Add custom JavaScript
+
+To add custom JavaScript code to `pkgdown` site one should create and modify file `pkgdown/extra.js` in package root. Go [here](https://github.com/echasnovski/highdown/blob/master/inst/extra.js) for code that initializes __highlight.js__ and registers default R language parsing rules.
+
+## Tweak reference page
+
+For __highlight.js__ to work, code should be wrapped in `<pre><span class="r">` tags. However, reference pages use only `<pre>`. To tweak these pages use the following function (with working directory being package root):
+
+```{r tweak_ref_pages}
+tweak_ref_pages <- function() {
+  # Find all reference pages
+  ref_files <- list.files(
+    path = "docs/reference/",
+    pattern = "\\.html",
+    recursive = TRUE,
+    full.names = TRUE
+  )
+
+  lapply(ref_files, add_code_node)
+
+  invisible(ref_files)
+}
+
+add_code_node <- function(x) {
+  page <- paste0(readLines(x), collapse = "\n")
+
+  # Regular expression magic for adding <code class = "r"></code>
+  page <- gsub('(<pre.*?>)', '\\1<code class = "r">', page)
+  page <- gsub('<\\/pre>', '<\\/code><\\/pre>', page)
+
+  invisible(writeLines(page, x))
+}
+```
+
+__Note__ that as for 2017-10-27 this still can cause incorrect highlighting if some actual code is placed just after comment.
+
+## Add highlight.js CSS rules
+
+Edit `pkgdown/extra.css` for __highlight.js__ classes. For template with [Idea](https://github.com/isagalaev/highlight.js/blob/master/src/styles/idea.css) style along with R default classes look [here](https://github.com/echasnovski/highdown/blob/master/inst/extra.css).
+
+# Conclusions
+
+- It is confirmed that asking questions about seemingly simple task can lead to the long journey of code exploration and hacking.
+- At first try to find a way to reuse existing solutions, if they satisfy your needs. It can save considerable amount of time in the future.
+- With [highdown](https://github.com/echasnovski/highdown) it is straightforward to customise code highlighting of `pkgdown` sites.
+
+`r blogdown::shortcode("spoiler", id = '\"sessionInfo\"', title = '\"sessionInfo()\"')`
+
+```{r sessionInfo, eval = TRUE}
+sessionInfo()
+```
+
+`r blogdown::shortcode("/spoiler")`
