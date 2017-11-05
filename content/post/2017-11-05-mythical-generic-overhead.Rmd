@@ -1,0 +1,307 @@
+---
+title: Mythical Generic Overhead
+author: Evgeni Chasnovski
+date: '2017-11-05'
+publishdate: '2017-11-05'
+slug: mythical-generic-overhead
+categories: []
+tags:
+  - rstats
+description: 'Computational overhead analysis of using "generic+method" approach instead of "if-else" sequence and "switch" statement.'
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  eval = TRUE,
+  collapse = TRUE,
+  fig.width = 9
+)
+
+# Actual computation is done in ".R" file with the same name
+load("2017-11-05-mythical-generic-overhead_data.RData")
+```
+
+# Prologue
+
+Earlier this week I came across this tweet from [Thomas](https://twitter.com/thomasp85) (author of many useful and powerful R packages):
+
+`r blogdown::shortcode(.name = "tweet", '\"924933249285214209"', .type = "html")`
+
+"Generic+methods" approach is considered better for many reasons, which can be summarised as "easier code maintenance, extensibility and understandability". Hadley's ruthless answer confirms this:
+
+`r blogdown::shortcode(.name = "tweet", '\"924970634064613378"', .type = "html")`
+
+However, I was curious about looking for possible pros of "if-else" approach. The most legitimate point (in some circumstances) I was able to produce was "... method dispatch can be slower on microseconds level. But it rarely has any practical impacts". This thought inspired me to make some analysis of possible computational overhead of using "generic+methods" approach over "if-else" and "switch" (which seems just a slight enhancement of "if-else").
+
+__Note__ that, regardless of this analysis outcome, using S3 methods is better choice over "if-else" sequence and "switch" statement in almost all practical cases. 
+
+# Overview
+
+Brainstorm about possible nature of performance led to the following experimental design features:
+
+- Evaluation should be done for different number of possible classes.
+- Evaluation should be done for different classes inside "if-else" chain, to account for its sequential nature.
+- Action performed by every function should be the same for all three considered methods.
+
+## Experiment
+
+- Take range of possible classes number (`n_class`) as `1:20`.
+- For every value of `n_class` generate functions for "if-else" (`if_get_true`), "switch" (`switch_get_true`) and "generic+methods" (`gen_get_true`) approaches. Each of this function will take one argument `x`. They will check the class of `x` and perform `return(TRUE)` action (regardless of class).
+- Measure for particular `n_class` (with package [microbenchmark](https://cran.r-project.org/web/packages/microbenchmark/index.html)) computation time of all possible `*_get_true(x)`:
+    - `*` can be `if`, `switch` and `gen`.
+    - `x` is constructed independently from `*` and is a numeric value `1` with class equals to one of `class1`, ..., `class{n_class}` (total `n_class` possibilities).
+    - Argument `times` of `microbenchmark` (actual number of times to evaluate the expression) should be quite big. As preliminary tests showed, computation time differs in microseconds, and big number of actual evaluations is needed to remove the statistical noise. In this analysis it is taken as $1000000$.
+    - The final benchmark of computation time is __median__ of all actual evaluation times (in microseconds).
+- Totally there should be $(1 + 2 + ... + 20) \cdot 3 = 630$ measurements.
+
+## Hypotheses
+
+1. _"Generic+methods" benchmark correlates with number of classes_. Search of appropriate method in bigger set should take more time.
+1. _"Generic+methods" benchmark doesn't correlate with class value_. Just a guess.
+1. _"If-else" benchmark positively correlates with class value_. The later class is in "if-else" sequence the more time it should take to get to it.
+1. _"If-else" and "switch" benchmarks are better than "generic+methods" with small number of classes but the opposite is true with bigger ones_. This is just the initial guess which led to this analysis.
+
+## Setup
+
+```{r Viewable setup}
+suppressMessages(library(tidyverse))
+suppressMessages(library(rlang))
+suppressMessages(library(microbenchmark))
+
+set.seed(1105)
+
+ggplot2::theme_set(theme_bw())
+```
+
+# Creating Data
+
+General approach for computing benchmarks:
+
+- Create separate environment for every value of `n_class`.
+- Create in every environment the set of needed functions.
+- Compute benchmarks for every `n_class`, class id (which is a class's number in sequence of "if-else"s) and approach.
+
+## Function Generators
+
+Function `new_get_true_all()` takes number of possible classes `n_class` and target environment `env` (by default, it is the environment from which function is called). It creates all necessary functions in `env` and returns it for cleaner use inside [dplyr](http://dplyr.tidyverse.org)'s `mutate`.
+
+```{r Function generators, eval = FALSE}
+# Wrapper for creating function with one argument `x` in environment `env`
+new_f <- function(name, body, env) {
+  fun <- new_function(alist(x = ), parse_expr(body), env)
+  
+  assign(x = name, value = fun, envir = env)
+}
+
+new_if_get_true <- function(n_class = 1, env = caller_env()) {
+  body <- paste0(
+    'if (class(x) == "class', seq_len(n_class), '") { return(TRUE) }',
+    collapse = " else "
+  )
+  
+  new_f("if_get_true", body, env)
+}
+
+new_switch_get_true <- function(n_class = 1, env = caller_env()) {
+  body <- paste0(
+    "switch(\nclass(x),\n",
+    paste0("class", seq_len(n_class), " = return(TRUE)",
+           collapse = ",\n"),
+    "\n)"
+  )
+  
+  new_f("switch_get_true", body, env)
+}
+
+new_gen_get_true <- function(n_class = 1, env = caller_env()) {
+  # Create generic
+  new_f("gen_get_true", 'UseMethod("gen_get_true")', env)
+  
+  # Create methods
+  method_names <- paste0("gen_get_true.class", seq_len(n_class))
+  
+  walk(method_names, new_f, body = "return(TRUE)", env = env)
+}
+
+new_get_true_all <- function(n_class = 1, env = caller_env()) {
+  new_if_get_true(n_class = n_class, env = env)
+  new_switch_get_true(n_class = n_class, env = env)
+  new_gen_get_true(n_class = n_class, env = env)
+  
+  env
+}
+```
+
+For example, the result of calling `new_get_true_all(n_class = 2)` from console is creation of the following functions in global environment (here `class1` has id 1, `class2` - 2 and so on):
+
+```{r Example of generating functions}
+new_get_true_all(n_class = 2)
+
+if_get_true
+
+switch_get_true
+
+gen_get_true
+
+gen_get_true.class1
+
+gen_get_true.class2
+```
+
+## Benchmark
+
+Function for creating benchmarks for one value of `n_class` given already created environment `env` with all functions needed:
+
+```{r Benchmark function}
+bench_funs <- function(n_class = 1, env = caller_env(), times = 1000000) {
+  bench <- map(seq_len(n_class), function(class_id) {
+    assign("x", structure(1, class = paste0("class", class_id)), envir = env)
+    assign("times", times, envir = env)
+    
+    eval(
+      quote(microbenchmark(
+        'if' = if_get_true(x),
+        'switch' = switch_get_true(x),
+        gen = gen_get_true(x),
+        times = times
+      )),
+      envir = env
+    ) %>%
+      as_tibble() %>%
+      group_by(expr) %>%
+      # Median computation time in microseconds
+      summarise(time = median(time) / 1000) %>%
+      mutate(class_id = class_id)
+  }) %>%
+    bind_rows() %>%
+    rename(method = expr)
+  
+  rm(list = c("x", "times"), envir = env)
+  
+  bench
+}
+```
+
+Computing benchmarks:
+
+```{r Computing benchmarks, eval = FALSE}
+# Takes considerable amount of time to run
+overhead_bench <- tibble(n_class = 1:20) %>%
+  mutate(
+    env = rerun(n(), child_env(.GlobalEnv)),
+    env = map2(n_class, env, new_get_true_all),
+    bench = map2(n_class, env, bench_funs, times = 1000000)
+  ) %>%
+  select(-env) %>%
+  unnest(bench) %>%
+  mutate(method = as.character(method)) %>%
+  select(n_class, class_id, method, time)
+```
+
+The result has the following structure:
+
+```{r Example of overhead_bench}
+overhead_bench
+```
+
+# Analysis
+
+We are interested in analyzing benchmarks of class checking approaches in relation to two parameters: number of possible classes `n_class` and class id `class_id`. For benchmark we will again use the __median__ of computation time, computed for every group defined by approach and parameter.
+
+For analysis let's visualize and compute correlation coefficients' confidence interval (CI) for every approach and parameter. Based on this information we will make [conclusions](`r blogdown::shortcode(.name = "relref", '\"#conclusions\"', .type = "html")`).
+
+## Plots
+
+Let's define function for plotting median computation time for every approach based on parameter `param` (which will be `n_class` and `class_id`).
+
+```{r Plot function}
+plot_median_time <- function(tbl, param) {
+  param_enquo <- enquo(param)
+  
+  overhead_bench %>%
+    mutate(
+      Method = case_when(
+        method == "gen" ~ "generic+\nmethods",
+        method == "if" ~ "if-else",
+        method == "switch" ~ "switch"
+      )
+    ) %>%
+    group_by(Method, param = UQ(param_enquo)) %>%
+    summarise(median_time = median(time)) %>%
+    ungroup() %>%
+    ggplot(aes(param, median_time, group = Method, colour = Method)) +
+      geom_point() + geom_line() +
+      geom_hline(yintercept = 0, colour = "red")
+}
+```
+
+```{r Median time for n_class}
+overhead_bench %>%
+  plot_median_time(n_class) +
+    labs(
+      title = "Benchmarks for number of classes",
+      x = "Number of possible classes",
+      y = "Median computation time (microseconds)"
+    )
+```
+
+```{r Median time for class_id}
+overhead_bench %>%
+  plot_median_time(class_id) +
+    labs(
+      title = "Benchmarks for class id",
+      x = 'Class id (number in sequence of "if-else"s)',
+      y = "Median computation time (microseconds)"
+    )
+```
+
+## Correlations
+
+Similarly to plotting, let's define a function for computing correlation coefficient CI for parameter benchmarks.
+
+```{r Correlation function}
+extract_cor_ci <- function(cor_test) {
+  ci <- round(cor_test$conf.int, digits = 4)
+  
+  tibble(lower = ci[1], upper = ci[2])
+}
+
+compute_median_time_cor_ci <- function(tbl, param) {
+  param_enquo <- enquo(param)
+  
+  tbl %>%
+    group_by(method, UQ(param_enquo)) %>%
+    summarise(median_time = median(time)) %>%
+    summarise(cor_test = list(cor.test(UQ(param_enquo), median_time,
+                                       conf.level = 0.95))) %>%
+    mutate(cor_ci = map(cor_test, extract_cor_ci)) %>%
+    select(-cor_test) %>%
+    unnest(cor_ci)
+}
+```
+
+```{r Correlation between median_time and n_class}
+compute_median_time_cor_ci(overhead_bench, n_class)
+```
+
+```{r Correlation between median_time and class_id}
+compute_median_time_cor_ci(overhead_bench, class_id)
+```
+
+# Conclusions
+
+- One shouldn't be intimidated by necessity of operating with function generators and environments.
+- "Generic+methods" benchmark __doesn't correlate__ with number of classes (at least considering less then 20 classes).
+- "Generic+methods" benchmark __seems to negatively correlate__ with class id. This result seems somewhat odd to me.
+- "If-else" and "switch" benchmarks __positively correlate__ with both number of classes and class id. However, slopes for "switch" approach is rather gentle.
+- "If-else" approach is faster than "generic+methods" for number of classes less than 3 and slower for 4 and more. "Switch" is faster for less than 20 at which they almost equal.
+
+
+`r blogdown::shortcode("spoiler", id = '\"sessionInfo\"', title = '\"sessionInfo()\"')`
+
+```{r sessionInfo, eval = TRUE}
+sessionInfo()
+```
+
+`r blogdown::shortcode("/spoiler")`

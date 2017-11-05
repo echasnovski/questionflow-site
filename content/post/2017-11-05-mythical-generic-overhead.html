@@ -1,0 +1,339 @@
+---
+title: Mythical Generic Overhead
+author: Evgeni Chasnovski
+date: '2017-11-05'
+publishdate: '2017-11-05'
+slug: mythical-generic-overhead
+categories: []
+tags:
+  - rstats
+description: 'Computational overhead analysis of using "generic+method" approach instead of "if-else" sequence and "switch" statement.'
+---
+
+
+
+<div id="prologue" class="section level1">
+<h1>Prologue</h1>
+<p>Earlier this week I came across this tweet from <a href="https://twitter.com/thomasp85">Thomas</a> (author of many useful and powerful R packages):</p>
+{{< tweet "924933249285214209" >}}
+<p>“Generic+methods” approach is considered better for many reasons, which can be summarised as “easier code maintenance, extensibility and understandability”. Hadley’s ruthless answer confirms this:</p>
+{{< tweet "924970634064613378" >}}
+<p>However, I was curious about looking for possible pros of “if-else” approach. The most legitimate point (in some circumstances) I was able to produce was “… method dispatch can be slower on microseconds level. But it rarely has any practical impacts”. This thought inspired me to make some analysis of possible computational overhead of using “generic+methods” approach over “if-else” and “switch” (which seems just a slight enhancement of “if-else”).</p>
+<p><strong>Note</strong> that, regardless of this analysis outcome, using S3 methods is better choice over “if-else” sequence and “switch” statement in almost all practical cases.</p>
+</div>
+<div id="overview" class="section level1">
+<h1>Overview</h1>
+<p>Brainstorm about possible nature of performance led to the following experimental design features:</p>
+<ul>
+<li>Evaluation should be done for different number of possible classes.</li>
+<li>Evaluation should be done for different classes inside “if-else” chain, to account for its sequential nature.</li>
+<li>Action performed by every function should be the same for all three considered methods.</li>
+</ul>
+<div id="experiment" class="section level2">
+<h2>Experiment</h2>
+<ul>
+<li>Take range of possible classes number (<code>n_class</code>) as <code>1:20</code>.</li>
+<li>For every value of <code>n_class</code> generate functions for “if-else” (<code>if_get_true</code>), “switch” (<code>switch_get_true</code>) and “generic+methods” (<code>gen_get_true</code>) approaches. Each of this function will take one argument <code>x</code>. They will check the class of <code>x</code> and perform <code>return(TRUE)</code> action (regardless of class).</li>
+<li>Measure for particular <code>n_class</code> (with package <a href="https://cran.r-project.org/web/packages/microbenchmark/index.html">microbenchmark</a>) computation time of all possible <code>*_get_true(x)</code>:
+<ul>
+<li><code>*</code> can be <code>if</code>, <code>switch</code> and <code>gen</code>.</li>
+<li><code>x</code> is constructed independently from <code>*</code> and is a numeric value <code>1</code> with class equals to one of <code>class1</code>, …, <code>class{n_class}</code> (total <code>n_class</code> possibilities).</li>
+<li>Argument <code>times</code> of <code>microbenchmark</code> (actual number of times to evaluate the expression) should be quite big. As preliminary tests showed, computation time differs in microseconds, and big number of actual evaluations is needed to remove the statistical noise. In this analysis it is taken as <span class="math inline">\(1000000\)</span>.</li>
+<li>The final benchmark of computation time is <strong>median</strong> of all actual evaluation times (in microseconds).</li>
+</ul></li>
+<li>Totally there should be <span class="math inline">\((1 + 2 + ... + 20) \cdot 3 = 630\)</span> measurements.</li>
+</ul>
+</div>
+<div id="hypotheses" class="section level2">
+<h2>Hypotheses</h2>
+<ol style="list-style-type: decimal">
+<li><em>“Generic+methods” benchmark correlates with number of classes</em>. Search of appropriate method in bigger set should take more time.</li>
+<li><em>“Generic+methods” benchmark doesn’t correlate with class value</em>. Just a guess.</li>
+<li><em>“If-else” benchmark positively correlates with class value</em>. The later class is in “if-else” sequence the more time it should take to get to it.</li>
+<li><em>“If-else” and “switch” benchmarks are better than “generic+methods” with small number of classes but the opposite is true with bigger ones</em>. This is just the initial guess which led to this analysis.</li>
+</ol>
+</div>
+<div id="setup" class="section level2">
+<h2>Setup</h2>
+<pre class="r"><code>suppressMessages(library(tidyverse))
+suppressMessages(library(rlang))
+suppressMessages(library(microbenchmark))
+
+set.seed(1105)
+
+ggplot2::theme_set(theme_bw())</code></pre>
+</div>
+</div>
+<div id="creating-data" class="section level1">
+<h1>Creating Data</h1>
+<p>General approach for computing benchmarks:</p>
+<ul>
+<li>Create separate environment for every value of <code>n_class</code>.</li>
+<li>Create in every environment the set of needed functions.</li>
+<li>Compute benchmarks for every <code>n_class</code>, class id (which is a class’s number in sequence of “if-else”s) and approach.</li>
+</ul>
+<div id="function-generators" class="section level2">
+<h2>Function Generators</h2>
+<p>Function <code>new_get_true_all()</code> takes number of possible classes <code>n_class</code> and target environment <code>env</code> (by default, it is the environment from which function is called). It creates all necessary functions in <code>env</code> and returns it for cleaner use inside <a href="http://dplyr.tidyverse.org">dplyr</a>’s <code>mutate</code>.</p>
+<pre class="r"><code># Wrapper for creating function with one argument `x` in environment `env`
+new_f &lt;- function(name, body, env) {
+  fun &lt;- new_function(alist(x = ), parse_expr(body), env)
+  
+  assign(x = name, value = fun, envir = env)
+}
+
+new_if_get_true &lt;- function(n_class = 1, env = caller_env()) {
+  body &lt;- paste0(
+    &#39;if (class(x) == &quot;class&#39;, seq_len(n_class), &#39;&quot;) { return(TRUE) }&#39;,
+    collapse = &quot; else &quot;
+  )
+  
+  new_f(&quot;if_get_true&quot;, body, env)
+}
+
+new_switch_get_true &lt;- function(n_class = 1, env = caller_env()) {
+  body &lt;- paste0(
+    &quot;switch(\nclass(x),\n&quot;,
+    paste0(&quot;class&quot;, seq_len(n_class), &quot; = return(TRUE)&quot;,
+           collapse = &quot;,\n&quot;),
+    &quot;\n)&quot;
+  )
+  
+  new_f(&quot;switch_get_true&quot;, body, env)
+}
+
+new_gen_get_true &lt;- function(n_class = 1, env = caller_env()) {
+  # Create generic
+  new_f(&quot;gen_get_true&quot;, &#39;UseMethod(&quot;gen_get_true&quot;)&#39;, env)
+  
+  # Create methods
+  method_names &lt;- paste0(&quot;gen_get_true.class&quot;, seq_len(n_class))
+  
+  walk(method_names, new_f, body = &quot;return(TRUE)&quot;, env = env)
+}
+
+new_get_true_all &lt;- function(n_class = 1, env = caller_env()) {
+  new_if_get_true(n_class = n_class, env = env)
+  new_switch_get_true(n_class = n_class, env = env)
+  new_gen_get_true(n_class = n_class, env = env)
+  
+  env
+}</code></pre>
+<p>For example, the result of calling <code>new_get_true_all(n_class = 2)</code> from console is creation of the following functions in global environment (here <code>class1</code> has id 1, <code>class2</code> - 2 and so on):</p>
+<pre class="r"><code>new_get_true_all(n_class = 2)
+## &lt;environment: R_GlobalEnv&gt;
+
+if_get_true
+## function (x) 
+## if (class(x) == &quot;class1&quot;) {
+##     return(TRUE)
+## } else if (class(x) == &quot;class2&quot;) {
+##     return(TRUE)
+## }
+
+switch_get_true
+## function (x) 
+## switch(class(x), class1 = return(TRUE), class2 = return(TRUE))
+
+gen_get_true
+## function (x) 
+## UseMethod(&quot;gen_get_true&quot;)
+
+gen_get_true.class1
+## function (x) 
+## return(TRUE)
+
+gen_get_true.class2
+## function (x) 
+## return(TRUE)</code></pre>
+</div>
+<div id="benchmark" class="section level2">
+<h2>Benchmark</h2>
+<p>Function for creating benchmarks for one value of <code>n_class</code> given already created environment <code>env</code> with all functions needed:</p>
+<pre class="r"><code>bench_funs &lt;- function(n_class = 1, env = caller_env(), times = 1000000) {
+  bench &lt;- map(seq_len(n_class), function(class_id) {
+    assign(&quot;x&quot;, structure(1, class = paste0(&quot;class&quot;, class_id)), envir = env)
+    assign(&quot;times&quot;, times, envir = env)
+    
+    eval(
+      quote(microbenchmark(
+        &#39;if&#39; = if_get_true(x),
+        &#39;switch&#39; = switch_get_true(x),
+        gen = gen_get_true(x),
+        times = times
+      )),
+      envir = env
+    ) %&gt;%
+      as_tibble() %&gt;%
+      group_by(expr) %&gt;%
+      # Median computation time in microseconds
+      summarise(time = median(time) / 1000) %&gt;%
+      mutate(class_id = class_id)
+  }) %&gt;%
+    bind_rows() %&gt;%
+    rename(method = expr)
+  
+  rm(list = c(&quot;x&quot;, &quot;times&quot;), envir = env)
+  
+  bench
+}</code></pre>
+<p>Computing benchmarks:</p>
+<pre class="r"><code># Takes considerable amount of time to run
+overhead_bench &lt;- tibble(n_class = 1:20) %&gt;%
+  mutate(
+    env = rerun(n(), child_env(.GlobalEnv)),
+    env = map2(n_class, env, new_get_true_all),
+    bench = map2(n_class, env, bench_funs, times = 1000000)
+  ) %&gt;%
+  select(-env) %&gt;%
+  unnest(bench) %&gt;%
+  mutate(method = as.character(method)) %&gt;%
+  select(n_class, class_id, method, time)</code></pre>
+<p>The result has the following structure:</p>
+<pre class="r"><code>overhead_bench
+## # A tibble: 630 x 4
+##    n_class class_id method  time
+##      &lt;int&gt;    &lt;int&gt;  &lt;chr&gt; &lt;dbl&gt;
+##  1       1        1     if 0.529
+##  2       1        1 switch 0.381
+##  3       1        1    gen 0.820
+##  4       2        1     if 0.521
+##  5       2        1 switch 0.396
+##  6       2        1    gen 0.811
+##  7       2        2     if 0.961
+##  8       2        2 switch 0.544
+##  9       2        2    gen 1.029
+## 10       3        1     if 0.554
+## # ... with 620 more rows</code></pre>
+</div>
+</div>
+<div id="analysis" class="section level1">
+<h1>Analysis</h1>
+<p>We are interested in analyzing benchmarks of class checking approaches in relation to two parameters: number of possible classes <code>n_class</code> and class id <code>class_id</code>. For benchmark we will again use the <strong>median</strong> of computation time, computed for every group defined by approach and parameter.</p>
+<p>For analysis let’s visualize and compute correlation coefficients’ confidence interval (CI) for every approach and parameter. Based on this information we will make <a href="{{< relref "#conclusions" >}}">conclusions</a>.</p>
+<div id="plots" class="section level2">
+<h2>Plots</h2>
+<p>Let’s define function for plotting median computation time for every approach based on parameter <code>param</code> (which will be <code>n_class</code> and <code>class_id</code>).</p>
+<pre class="r"><code>plot_median_time &lt;- function(tbl, param) {
+  param_enquo &lt;- enquo(param)
+  
+  overhead_bench %&gt;%
+    mutate(
+      Method = case_when(
+        method == &quot;gen&quot; ~ &quot;generic+\nmethods&quot;,
+        method == &quot;if&quot; ~ &quot;if-else&quot;,
+        method == &quot;switch&quot; ~ &quot;switch&quot;
+      )
+    ) %&gt;%
+    group_by(Method, param = UQ(param_enquo)) %&gt;%
+    summarise(median_time = median(time)) %&gt;%
+    ungroup() %&gt;%
+    ggplot(aes(param, median_time, group = Method, colour = Method)) +
+      geom_point() + geom_line() +
+      geom_hline(yintercept = 0, colour = &quot;red&quot;)
+}</code></pre>
+<pre class="r"><code>overhead_bench %&gt;%
+  plot_median_time(n_class) +
+    labs(
+      title = &quot;Benchmarks for number of classes&quot;,
+      x = &quot;Number of possible classes&quot;,
+      y = &quot;Median computation time (microseconds)&quot;
+    )</code></pre>
+<p><img src="/post/2017-11-05-mythical-generic-overhead_files/figure-html/Median%20time%20for%20n_class-1.png" width="864" /></p>
+<pre class="r"><code>overhead_bench %&gt;%
+  plot_median_time(class_id) +
+    labs(
+      title = &quot;Benchmarks for class id&quot;,
+      x = &#39;Class id (number in sequence of &quot;if-else&quot;s)&#39;,
+      y = &quot;Median computation time (microseconds)&quot;
+    )</code></pre>
+<p><img src="/post/2017-11-05-mythical-generic-overhead_files/figure-html/Median%20time%20for%20class_id-1.png" width="864" /></p>
+</div>
+<div id="correlations" class="section level2">
+<h2>Correlations</h2>
+<p>Similarly to plotting, let’s define a function for computing correlation coefficient CI for parameter benchmarks.</p>
+<pre class="r"><code>extract_cor_ci &lt;- function(cor_test) {
+  ci &lt;- round(cor_test$conf.int, digits = 4)
+  
+  tibble(lower = ci[1], upper = ci[2])
+}
+
+compute_median_time_cor_ci &lt;- function(tbl, param) {
+  param_enquo &lt;- enquo(param)
+  
+  tbl %&gt;%
+    group_by(method, UQ(param_enquo)) %&gt;%
+    summarise(median_time = median(time)) %&gt;%
+    summarise(cor_test = list(cor.test(UQ(param_enquo), median_time,
+                                       conf.level = 0.95))) %&gt;%
+    mutate(cor_ci = map(cor_test, extract_cor_ci)) %&gt;%
+    select(-cor_test) %&gt;%
+    unnest(cor_ci)
+}</code></pre>
+<pre class="r"><code>compute_median_time_cor_ci(overhead_bench, n_class)
+## # A tibble: 3 x 3
+##   method   lower  upper
+##    &lt;chr&gt;   &lt;dbl&gt;  &lt;dbl&gt;
+## 1    gen -0.4407 0.4444
+## 2     if  0.9264 0.9886
+## 3 switch  0.8297 0.9726</code></pre>
+<pre class="r"><code>compute_median_time_cor_ci(overhead_bench, class_id)
+## # A tibble: 3 x 3
+##   method   lower   upper
+##    &lt;chr&gt;   &lt;dbl&gt;   &lt;dbl&gt;
+## 1    gen -0.8812 -0.4056
+## 2     if  0.9912  0.9987
+## 3 switch  0.9395  0.9907</code></pre>
+</div>
+</div>
+<div id="conclusions" class="section level1">
+<h1>Conclusions</h1>
+<ul>
+<li>One shouldn’t be intimidated by necessity of operating with function generators and environments.</li>
+<li>“Generic+methods” benchmark <strong>doesn’t correlate</strong> with number of classes (at least considering less then 20 classes).</li>
+<li>“Generic+methods” benchmark <strong>seems to negatively correlate</strong> with class id. This result seems somewhat odd to me.</li>
+<li>“If-else” and “switch” benchmarks <strong>positively correlate</strong> with both number of classes and class id. However, slopes for “switch” approach is rather gentle.</li>
+<li>“If-else” approach is faster than “generic+methods” for number of classes less than 3 and slower for 4 and more. “Switch” is faster for less than 20 at which they almost equal.</li>
+</ul>
+{{% spoiler id="sessionInfo" title="sessionInfo()" %}}
+<pre class="r"><code>sessionInfo()
+## R version 3.4.2 (2017-09-28)
+## Platform: x86_64-pc-linux-gnu (64-bit)
+## Running under: Ubuntu 16.04.3 LTS
+## 
+## Matrix products: default
+## BLAS: /usr/lib/libblas/libblas.so.3.6.0
+## LAPACK: /usr/lib/lapack/liblapack.so.3.6.0
+## 
+## locale:
+##  [1] LC_CTYPE=ru_UA.UTF-8       LC_NUMERIC=C              
+##  [3] LC_TIME=ru_UA.UTF-8        LC_COLLATE=ru_UA.UTF-8    
+##  [5] LC_MONETARY=ru_UA.UTF-8    LC_MESSAGES=ru_UA.UTF-8   
+##  [7] LC_PAPER=ru_UA.UTF-8       LC_NAME=C                 
+##  [9] LC_ADDRESS=C               LC_TELEPHONE=C            
+## [11] LC_MEASUREMENT=ru_UA.UTF-8 LC_IDENTIFICATION=C       
+## 
+## attached base packages:
+## [1] methods   stats     graphics  grDevices utils     datasets  base     
+## 
+## other attached packages:
+##  [1] bindrcpp_0.2           microbenchmark_1.4-2.1 rlang_0.1.2.9000      
+##  [4] dplyr_0.7.4            purrr_0.2.4            readr_1.1.1           
+##  [7] tidyr_0.7.2            tibble_1.3.4           ggplot2_2.2.1         
+## [10] tidyverse_1.1.1       
+## 
+## loaded via a namespace (and not attached):
+##  [1] Rcpp_0.12.13     cellranger_1.1.0 compiler_3.4.2   plyr_1.8.4      
+##  [5] bindr_0.1        forcats_0.2.0    tools_3.4.2      digest_0.6.12   
+##  [9] lubridate_1.7.0  jsonlite_1.5     evaluate_0.10.1  nlme_3.1-131    
+## [13] gtable_0.2.0     lattice_0.20-35  pkgconfig_2.0.1  psych_1.7.8     
+## [17] yaml_2.1.14      parallel_3.4.2   haven_1.1.0      blogdown_0.1    
+## [21] xml2_1.1.1       httr_1.3.1       stringr_1.2.0    knitr_1.17      
+## [25] hms_0.3          rprojroot_1.2    grid_3.4.2       glue_1.2.0      
+## [29] R6_2.2.2         readxl_1.0.0     foreign_0.8-69   rmarkdown_1.6   
+## [33] bookdown_0.5     modelr_0.1.1     reshape2_1.4.2   magrittr_1.5    
+## [37] backports_1.1.1  scales_0.5.0     htmltools_0.3.6  rvest_0.3.2     
+## [41] assertthat_0.2.0 mnormt_1.5-5     colorspace_1.3-2 labeling_0.3    
+## [45] stringi_1.1.5    lazyeval_0.2.1   munsell_0.4.3    broom_0.4.2</code></pre>
+{{% /spoiler %}}
+</div>
