@@ -7,7 +7,7 @@ slug: mythical-generic-overhead
 categories: []
 tags:
   - rstats
-description: 'Computational overhead analysis of using "generic+method" approach instead of "if-else" sequence and "switch" statement.'
+description: "Computational overhead analysis of using generic+method approach instead of if-else sequence and switch statement."
 ---
 
 ```{r setup, include = FALSE}
