@@ -8,7 +8,7 @@ categories: []
 tags:
   - rstats
   - highlightjs
-description: "Practical advices about customizing code highlighting on web pages with [highlight.js](https://highlightjs.org/)."
+description: "Practical advices about customizing code highlighting on web pages with highlight.js."
 ---
 
 ```{r setup, include = FALSE}

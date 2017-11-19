@@ -8,7 +8,7 @@ categories: []
 tags:
   - rstats
   - pkgdown
-description: "Practical advices about customizing code highlighting on web pages created with __pkgdown__."
+description: "Practical advices about customizing code highlighting on web pages created with pkgdown."
 ---
 
 ```{r setup, include = FALSE}
