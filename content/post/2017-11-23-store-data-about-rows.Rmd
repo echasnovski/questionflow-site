@@ -1,0 +1,194 @@
+---
+title: Store Data About Rows
+author: Evgeni Chasnovski
+date: '2017-11-20'
+slug: store-data-about-rows
+categories: []
+tags:
+  - rstats
+  - keyholder
+description: 'Introduction to keyholder package. Tools for keeping track of information about rows.'
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  eval = TRUE,
+  collapse = TRUE,
+  fig.width = 9
+)
+options(tibble.print_min = 5, tibble.print_max = 5)
+```
+
+# Prologue
+
+During development of my other R package ([ruler](https://github.com/echasnovski/ruler)), I encountered the following problem: how to track rows of data frame after application of some __user defined__ function? It is assumed that this function takes data frame as input, subsets it (with possible creation of new columns, but not rows) and returns the result. The typical example using [dplyr](http://dplyr.tidyverse.org/) and [magrittr](http://magrittr.tidyverse.org/)'s pipe:
+
+```{r Example modify}
+suppressMessages(library(dplyr))
+
+# Custom `mtcars` for more clear explanation
+mtcars_tbl <- mtcars %>%
+  select(mpg, vs, am) %>%
+  as_tibble()
+
+# A handy way of creating function with one argument
+modify <- . %>%
+  mutate(vs_am = vs * am) %>%
+  filter(vs_am == 1) %>%
+  arrange(desc(mpg))
+
+# The question is: which rows of `mtcars_tbl` are returned?
+mtcars_tbl %>% modify()
+```
+
+To solve this problem I ended up creating package [keyholder](https://echasnovski.github.io/keyholder), which became my first CRAN release. You can install its stable version with :
+
+```{r keyholder installation, eval = FALSE}
+install.packages("keyholder")
+```
+
+This post describes basis of design and main use cases of `keyholder`. For more information see its vignette [Introduction to keyholder](https://echasnovski.github.io/keyholder/articles/introduction.html).
+
+# Overview
+
+```{r Load keyholder}
+suppressMessages(library(keyholder))
+```
+
+The main idea of package is to create S3 class `keyed_df`, which indicates that original data frame (or tibble) should have attribute `keys`. "Key" is __any vector__ (even list) of the same length as number of rows in data frame. Keys are stored as tibble in attribute `keys` and so one data frame can have multiple keys. In other words, keys can be considered as __columns of data frame which are hidden from subsetting functions but are updated according to them__.
+
+To achieve that, those functions should be generic and have method for `keyed_df` implemented. Look [here](https://echasnovski.github.io/keyholder/reference/keyholder-supported-funs.html) for the list of functions supported by `keyholder`. As for version `0.1.1` they are all one- and two-table `dplyr` verbs for local data frames and `[` function.
+
+# Create and manipulate keys
+
+There are two distinct ways of creating keys: by assigning and by using existing columns:
+
+```{r Create keys}
+# By assigning
+mtcars_tbl_1 <- mtcars_tbl
+keys(mtcars_tbl_1) <- tibble(rev_id = nrow(mtcars_tbl_1):1)
+mtcars_tbl_1
+
+# By using existing columns
+mtcars_keyed <- mtcars_tbl %>% key_by(vs)
+mtcars_keyed
+```
+
+To get keys use `keys()` (which always returns tibble) or `pull_key()` (similar to `dplyr::pull()` but for keys):
+
+```{r Get keys}
+mtcars_keyed %>% keys()
+
+mtcars_keyed %>% pull_key(vs)
+```
+
+To restore keys (create respective columns in data frame) use `restore_keys()`:
+
+```{r Restore keys}
+# Column `vs` didn't change in output because it was restored from keys
+mtcars_keyed %>%
+  mutate(vs = 2) %>%
+  restore_keys(vs)
+```
+
+To end having keys use `unkey()`:
+
+```{r Remove keys}
+mtcars_keyed %>% unkey()
+```
+
+
+# Use cases
+
+## Track rows
+
+To track rows after application of user defined function one can create key with row number as values. `keyholder` has a wrapper `use_id()` for this:
+
+```{r Example of use_id}
+# `use_id()` removes all existing keys and creates key ".id"
+mtcars_track <- mtcars_tbl %>%
+  use_id()
+
+mtcars_track %>% pull_key(.id)
+```
+
+Now rows are tracked:
+
+```{r Example track rows}
+mtcars_track %>%
+  modify() %>%
+  pull_key(.id)
+
+# Make sure of correct result
+mtcars_tbl %>%
+  mutate(id = seq_len(n())) %>%
+  modify() %>%
+  pull(id)
+```
+
+The reason for using "key id" instead of "column id" is that `modify()` hypothetically can perform differently depending on columns of its input. For example, it can use `dplyr`'s [scoped variants](http://dplyr.tidyverse.org/reference/scoped.html) of verbs or simply check input's column structure.
+
+## Restore information
+
+During development of tools for data analysis one can have a need to ensure that certain columns don't change after application of some function. This can be achieved by keying those columns and restoring them later (__note__ that this can change the order of columns.):
+
+```{r Restore information}
+weird_modify <- . %>% transmute(new_col = vs + 2 * am)
+
+# Suppose there is a need for all columns to stay untouched in the output
+mtcars_tbl %>%
+  key_by(everything()) %>%
+  weird_modify() %>%
+  # This can be replaced by its scoped variant: restore_keys_all()
+  restore_keys(everything()) %>%
+  unkey()
+```
+
+## Hide columns
+
+In actual data analysis the following situation can happen: one should modify all but handful of columns with `dplyr::mutate_if()`.
+
+```{r Create if_modify}
+is_integerish <- function(x) {all(x == as.integer(x))}
+
+if_modify <- . %>% mutate_if(is_integerish, ~ . * 10)
+
+mtcars_tbl %>% if_modify()
+```
+
+Suppose column `vs` should appear unchanged in the output. This can be achieved in several ways, which differ slightly but significantly. The first one is to key by `vs`, apply function and restore `vs` from keys.
+
+```{r Hide columns 1}
+mtcars_tbl %>%
+  key_by(vs) %>%
+  if_modify() %>%
+  restore_keys(vs)
+```
+
+The advantage is that it doesn't change the order of columns. The disadvantage is that it actually applies modification function to column, which can be undesirable in some cases.
+
+The second approach is similar, but after keying by `vs` one can remove this column from data frame. This way column `vs` is moved to last column.
+
+```{r Hide columns 2}
+mtcars_hidden_vs <- mtcars_tbl %>% key_by(vs, .exclude = TRUE)
+
+mtcars_hidden_vs
+
+mtcars_hidden_vs %>%
+  if_modify() %>%
+  restore_keys(vs)
+```
+
+# Conclusions
+
+- It might be a good idea to extract some package functionality into separate package, as this can lead to one more useful tool.
+- Package `keyholder` offers functionality for keeping track of arbitrary data about rows after application of some __user defined__ function. This is done by creating special attribute "keys" which is updated after every change in rows (subsetting, ordering, etc.).
+
+`r blogdown::shortcode("spoiler", id = '\"sessionInfo\"', title = '\"sessionInfo()\"')`
+
+```{r sessionInfo, eval = TRUE}
+sessionInfo()
+```
+
+`r blogdown::shortcode("/spoiler")`
