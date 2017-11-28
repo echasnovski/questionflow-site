@@ -1,9 +1,8 @@
 ---
 title: "Package ruler"
-description: "Tidy Data Validation Reports. Tools for creating data validation pipelines and tidy reports."
+description: '__Tidy Data Validation Reports__. This package offers a framework for exploring and validating data frame like objects using [dplyr](http://dplyr.tidyverse.org/) grammar of data manipulation.'
 repo: "ruler"
 slug: package-ruler
 tags:
   - Rpackage
-draft: true
 ---

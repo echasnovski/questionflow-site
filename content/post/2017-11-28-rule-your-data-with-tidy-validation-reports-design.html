@@ -1,0 +1,424 @@
+---
+title: Rule Your Data with Tidy Validation Reports. Design
+author: Evgeni Chasnovski
+date: '2017-11-28'
+slug: rule-your-data-with-tidy-validation-reports-design
+categories: []
+tags:
+  - rstats
+  - ruler
+description: 'The story about design of ruler package: dplyr-style exploration and validation of data frame like objects.'
+---
+
+
+
+<div id="prologue" class="section level1">
+<h1>Prologue</h1>
+<p>Some time ago I had a task to write data validation code. As for most R practitioners, this led to exploration of present solutions. I was looking for a package with the following features:</p>
+<ul>
+<li>Relatively small amount of time should be spent learning before comfortable usage. Preferably, it should be built with <a href="https://www.tidyverse.org/">tidyverse</a> in mind.</li>
+<li>It should be quite flexible in terms of types of validation rules.</li>
+<li>Package should offer functionality for both validations (with relatively simple output format) and assertions (with relatively flexible behaviour).</li>
+<li><a href="http://magrittr.tidyverse.org/reference/pipe.html">Pipe</a>-friendliness.</li>
+<li>Validating only data frames would be enough.</li>
+</ul>
+<p>After devoting couple of days to research, I didn’t find any package fully (subjectively) meeting my needs (for a composed list look <a href="https://echasnovski.github.io/ruler/#other-packages-for-validation-and-assertions">here</a>). So I decided to write one myself. More precisely, it turned out into not one but two packages: <a href="https://echasnovski.github.io/ruler/">ruler</a> and <a href="https://echasnovski.github.io/keyholder/">keyholder</a>, which powers some of <code>ruler</code>’s functionality.</p>
+<p>This post is a <em>rather long</em> story about key moments in the journey of <code>ruler</code>’s design process. To learn other aspects see its <a href="https://echasnovski.github.io/ruler/">README</a> (for relatively brief introduction) or <a href="https://echasnovski.github.io/ruler/articles/">vignettes</a> (for more thorough description of package capabilities).</p>
+</div>
+<div id="overview" class="section level1">
+<h1>Overview</h1>
+<p>In my mind, the whole process of data validation should be performed in the following steps:</p>
+<ul>
+<li>Create conditions (rules) for data to meet.</li>
+<li>Expose data to them and obtain some kind of unified report as a result.</li>
+<li>Act based on the report.</li>
+</ul>
+<p>The design process went through a little different sequence of definition steps:</p>
+<ul>
+<li><a href="{{< relref "#validation-result" >}}">Validation result</a></li>
+<li><a href="{{< relref "#rules-definition" >}}">Rules definition</a></li>
+<li><a href="{{< relref "#exposing-process" >}}">Exposing process</a></li>
+<li><a href="{{< relref "#act-after-exposure" >}}">Act after exposure</a></li>
+</ul>
+<p>Of course, there was switching between these items in order to ensure they would work well together, but I feel this order was decisive for the end result.</p>
+<pre class="r"><code>suppressMessages(library(dplyr))
+suppressMessages(library(purrr))
+library(ruler)</code></pre>
+</div>
+<div id="validation-result" class="section level1">
+<h1>Validation result</h1>
+<div id="dplyr-data-units" class="section level2">
+<h2>Dplyr data units</h2>
+<p>I started with an attempt of simple and clear formulation of <strong>validation</strong>: it is a process of checking whether <em>something satisfies certain conditions</em>. As it was enough to be only validating data frames, <em>something</em> should be thought of as <em>parts of data frame</em> which I will call <strong>data units</strong>. <em>Certain conditions</em> might be represented as functions, which I will call <strong>rules</strong>, associated with some data unit and which return <code>TRUE</code>, if condition <em>is satisfied</em>, and <code>FALSE</code> otherwise.</p>
+<p>I decided to make <a href="http://dplyr.tidyverse.org/">dplyr</a> package a default tool for creating rules. The reason is, basically, because it satisfies most conditions I had in mind. Also I tend to use it for interactive validation of data frames, as, I am sure, many more R users. Its pipe-friendliness creates another important feature: interactive code can be transformed into a function just by replacing the initial data frame variable by a dot <code>.</code>. This will create a <em>functional sequence</em>, “a function which applies the entire chain of right-hand sides in turn to its input.”.</p>
+<p><code>dplyr</code> offers a set of tools for operating with the following data units (see comments):</p>
+<pre class="r"><code>is_integerish &lt;- function(x) {all(x == as.integer(x))}
+z_score &lt;- function(x) {abs(x - mean(x)) / sd(x)}
+
+mtcars_tbl &lt;- mtcars %&gt;% as_tibble()
+
+# Data frame as a whole
+validate_data &lt;- . %&gt;% summarise(nrow_low = n() &gt;= 15,
+                                 nrow_up = n() &lt;= 20)
+mtcars_tbl %&gt;% validate_data()
+## # A tibble: 1 x 2
+##   nrow_low nrow_up
+##      &lt;lgl&gt;   &lt;lgl&gt;
+## 1     TRUE   FALSE
+
+# Group as a whole
+validate_groups &lt;- . %&gt;% group_by(vs, am) %&gt;%
+  summarise(vs_am_low = n() &gt;= 7) %&gt;%
+  ungroup()
+mtcars_tbl %&gt;% validate_groups()
+## # A tibble: 4 x 3
+##      vs    am vs_am_low
+##   &lt;dbl&gt; &lt;dbl&gt;     &lt;lgl&gt;
+## 1     0     0      TRUE
+## 2     0     1     FALSE
+## 3     1     0      TRUE
+## 4     1     1      TRUE
+
+# Column as a whole
+validate_columns &lt;- . %&gt;%
+  summarise_if(is_integerish, funs(is_enough_sum = sum(.) &gt;= 14))
+mtcars_tbl %&gt;% validate_columns()
+## # A tibble: 1 x 6
+##   cyl_is_enough_sum hp_is_enough_sum vs_is_enough_sum am_is_enough_sum
+##               &lt;lgl&gt;            &lt;lgl&gt;            &lt;lgl&gt;            &lt;lgl&gt;
+## 1              TRUE             TRUE             TRUE            FALSE
+## # ... with 2 more variables: gear_is_enough_sum &lt;lgl&gt;,
+## #   carb_is_enough_sum &lt;lgl&gt;
+
+# Row as a whole
+validate_rows &lt;- . %&gt;% filter(vs == 1) %&gt;%
+  transmute(is_enough_sum = rowSums(.) &gt;= 200)
+mtcars_tbl %&gt;% validate_rows()
+## # A tibble: 14 x 1
+##   is_enough_sum
+##           &lt;lgl&gt;
+## 1          TRUE
+## 2          TRUE
+## 3          TRUE
+## 4          TRUE
+## 5          TRUE
+## # ... with 9 more rows
+
+# Cell
+validate_cells &lt;- . %&gt;%
+  transmute_if(is.numeric, funs(is_out = z_score(.) &gt; 1)) %&gt;%
+  slice(-(1:5))
+mtcars_tbl %&gt;% validate_cells()
+## # A tibble: 27 x 11
+##   mpg_is_out cyl_is_out disp_is_out hp_is_out drat_is_out wt_is_out
+##        &lt;lgl&gt;      &lt;lgl&gt;       &lt;lgl&gt;     &lt;lgl&gt;       &lt;lgl&gt;     &lt;lgl&gt;
+## 1      FALSE      FALSE       FALSE     FALSE        TRUE     FALSE
+## 2      FALSE       TRUE        TRUE      TRUE       FALSE     FALSE
+## 3      FALSE       TRUE       FALSE      TRUE       FALSE     FALSE
+## 4      FALSE       TRUE       FALSE     FALSE       FALSE     FALSE
+## 5      FALSE      FALSE       FALSE     FALSE       FALSE     FALSE
+## # ... with 22 more rows, and 5 more variables: qsec_is_out &lt;lgl&gt;,
+## #   vs_is_out &lt;lgl&gt;, am_is_out &lt;lgl&gt;, gear_is_out &lt;lgl&gt;, carb_is_out &lt;lgl&gt;</code></pre>
+</div>
+<div id="tidy-data-validation-report" class="section level2">
+<h2>Tidy data validation report</h2>
+<p>After realizing this type of <code>dplyr</code> structure, I noticed the following points.</p>
+<p>In order to use <code>dplyr</code> as tool for creating rules, there should be one extra level of abstraction for the whole functional sequence. It is not a rule but rather a several rules. In other words, it is a function that answers multiple questions about one type of data unit. I decided to call this <strong>rule pack</strong> or simply <strong>pack</strong>.</p>
+<p>In order to identify, whether some data unit obeys some rule, one needs to describe that data unit, rule and result of validation. Descriptions of last two are simple: for rule it is a combination of <strong>pack</strong> and <strong>rule</strong> names (which should always be defined) and for validation result it is <strong>value</strong> <code>TRUE</code> or <code>FALSE</code>.</p>
+<p>Description of data unit is trickier. After some thought, I decided that the most balanced way to do it is with two variables:</p>
+<ul>
+<li><strong>var</strong> (character) which represents the variable name of data unit:
+<ul>
+<li>Value “.all” is reserved for “all columns as a whole”.</li>
+<li>Value equal to some column name indicates column of data unit.</li>
+<li>Value not equal to some column name indicates the name of group: it is created by uniting (with delimiter) group levels of grouping columns.</li>
+</ul></li>
+<li><strong>id</strong> (integer) which represents the row index of data unit:
+<ul>
+<li>Value 0 is reserved for “all rows as a whole”.</li>
+<li>Value not equal to 0 indicates the row index of data unit.</li>
+</ul></li>
+</ul>
+<p>Combinations of these variables describe all mentioned data units:</p>
+<ul>
+<li><code>var == '.all'</code> and <code>id == 0</code>: Data as a whole.</li>
+<li><code>var != '.all'</code> and <code>id == 0</code>: Group (<code>var</code> shouldn’t be an actual column name) or column (<code>var</code> should be an actual column name) as a whole.</li>
+<li><code>var == '.all'</code> and <code>id != 0</code>: Row as a whole.</li>
+<li><code>var != '.all'</code> and <code>id != 0</code>: Described cell.</li>
+</ul>
+<p>With this knowledge in mind, I decided that the <strong>tidy data validation report</strong> should be a <a href="http://tibble.tidyverse.org/">tibble</a> with the following columns:</p>
+<ul>
+<li><code>pack</code> &lt;chr&gt; : Pack name.</li>
+<li><code>rule</code> &lt;chr&gt; : Rule name inside pack.</li>
+<li><code>var</code> &lt;chr&gt; : Variable name of data unit.</li>
+<li><code>id</code> &lt;int&gt; : Row index of data unit.</li>
+<li><code>value</code> &lt;lgl&gt; : Whether the described data unit obeys the rule.</li>
+</ul>
+</div>
+<div id="exposure" class="section level2">
+<h2>Exposure</h2>
+<p>Using only described report as validation output is possible if only information about breakers (data units which do not obey respective rules) is interesting. However, <em>reproducibility</em> is a great deal in R community, and keeping information about call can be helpful for future use.</p>
+<p>This idea led to creation of another object in <code>ruler</code> called <strong>packs info</strong>. It is also a <em>tibble</em> which contains all information about exposure call:</p>
+<ul>
+<li><em>name</em> &lt;chr&gt; : Name of the rule pack. This column is used to match column <code>pack</code> in tidy report.</li>
+<li><em>type</em> &lt;chr&gt; : Name of pack type. Indicates which data unit pack checks.</li>
+<li><em>fun</em> &lt;list&gt; : List of actually used rule pack functions.</li>
+<li><em>remove_obeyers</em> &lt;lgl&gt; : Value of convenience argument of the future <code>expose</code> function. It indicates whether rows about obeyers (data units that obey certain rule) were removed from report after applying pack.</li>
+</ul>
+<p>To fully represent validation, described two tibbles should be returned together. So the actual validation result is decided to be <strong>exposure</strong> which is basically an S3 class list with two tibbles <code>packs_info</code> and <code>report</code>. This data structure is fairly easy to understand and use. For example, exposures can be <a href="https://echasnovski.github.io/ruler/reference/bind_exposures.html">binded</a> together which is useful for combining several validation results. Also its elements are regular tibbles which can be filtered, summarised, joined, etc.</p>
+</div>
+</div>
+<div id="rules-definition" class="section level1">
+<h1>Rules definition</h1>
+<div id="interpretation-of-dplyr-output" class="section level2">
+<h2>Interpretation of dplyr output</h2>
+<p>I was willing to use pure <code>dplyr</code> in creating rule packs, i.e. without extra knowledge of data unit to be validated. However, I found it impossible to do without experiencing annoying edge cases. Problem with this approach is that all of <code>dplyr</code> outputs are tibbles with similar structures. The only differentiating features are:</p>
+<ul>
+<li><code>summarise</code> without grouping returns tibble with one row and user-defined column names.</li>
+<li><code>summarise</code> with grouping returns tibble with number of rows equal to number of summarised groups. Columns consist from grouping and user-defined ones.</li>
+<li><code>transmute</code> returns tibble with number of rows as in input data frame and user-defined column names.</li>
+<li>Scoped variants of <code>summarise</code> and <code>transmute</code> differ from regular ones in another mechanism of creating columns. They apply all supplied functions to all chosen columns. Resulting names are “the shortest … needed to uniquely identify the output”. It means that:
+<ul>
+<li>In case of one function they are column names.</li>
+<li>In case of more than one function and one column they are function names.</li>
+<li>In case of more than one column and function they are combinations of column and function names, pasted with character <code>_</code> (which, unfortunately, is hardcoded). To force this behaviour in previous cases <strong>both</strong> columns and functions should be named inside of helper functions <a href="http://dplyr.tidyverse.org/reference/vars.html">vars</a> and <a href="http://dplyr.tidyverse.org/reference/funs.html">funs</a>. To match output columns with combination of validated column and rule, this option is preferred. However, there is a need of different separator between column and function names, as character <code>_</code> is frequently used in column names.</li>
+</ul></li>
+</ul>
+<p>The first attempt was to use the following algorithm to interpret (identify validated data unit) the output:</p>
+<ul>
+<li>If there is at least one non-logical column then groups are validated. The reason is that in most cases grouping columns are character or factor ones. This already introduces edge case with logical grouping columns.</li>
+<li>Combination of whether number of rows equals 1 (<code>n_rows_one</code>) and presence of name separator in all column names (<code>all_contain_sep</code>) is used to make interpretation:
+<ul>
+<li>If <code>n_rows_one == TRUE</code> and <code>all_contain_sep == FALSE</code> then data is validated.</li>
+<li>If <code>n_rows_one == TRUE</code> and <code>all_contain_sep == TRUE</code> then columns are validated.</li>
+<li>If <code>n_rows_one == FALSE</code> and <code>all_contain_sep == FALSE</code> then rows are validated. This introduces an edge case when output has one row which is intended to be validated. It will be interpreted as ‘data as a whole’.</li>
+<li>If <code>n_rows_one == FALSE</code> and <code>all_contain_sep == TRUE</code> then cells are validated. This also has edge case when output has one row in which cells are intended to be validated. It will be interpreted as ‘columns as a whole’.</li>
+</ul></li>
+</ul>
+<p>Despite of having edge cases, this algorithm is good for guessing the validated data unit, which can be useful for interactive use. Its important prerequisite is to have a simple way of forcing extended naming in scoped <code>dplyr</code> verbs with custom rarely used separator.</p>
+</div>
+<div id="pack-creation" class="section level2">
+<h2>Pack creation</h2>
+<p>Research of pure dplyr-style way of creating rule packs left no choice but to create a mechanism of supplying information about data unit of interest along with pack functions. It consists of following important principles.</p>
+<p><strong>Use <code>ruler</code>’s function <code>rules()</code> instead of <code>funs()</code></strong>. Its goals are to force usage of full naming in scoped <code>dplyr</code> verbs as much as possible and impute missing rule names (as every rule should be named for validation report). <code>rules</code> is just a wrapper for <code>funs</code> but with extra functionality of naming its every output element and adding prefix to that names (which will be used as a part of separator between column and rule name). By default prefix is a string <code>._.</code>. It is chosen for its, hopefully, rare usage inside column names and symbolism (it is the Morse code of letter ‘R’).</p>
+<pre class="r"><code>funs(mean, sd)
+## &lt;fun_calls&gt;
+## $ mean: mean(.)
+## $ sd  : sd(.)
+
+rules(mean, sd)
+## &lt;fun_calls&gt;
+## $ ._.rule..1: mean(.)
+## $ ._.rule..2: sd(.)
+
+rules(mean, sd, .prefix = &quot;___&quot;)
+## &lt;fun_calls&gt;
+## $ ___rule..1: mean(.)
+## $ ___rule..2: sd(.)
+
+rules(fn_1 = mean, fn_2 = sd)
+## &lt;fun_calls&gt;
+## $ ._.fn_1: mean(.)
+## $ ._.fn_2: sd(.)</code></pre>
+<p><strong>Note</strong> that in case of using only one column in scoped verb it should be named within <code>dplyr::vars</code> in order to force full naming.</p>
+<p><strong>Use functions supported by <code>keyholder</code> to build rule packs</strong>. One of the main features I was going to implement is a possibility of validating only a subset of all possible data units. For example, validation of only last two rows (or columns) of data frame. There is no problem with columns: they can be specified with <code>summarise_at</code>. However, the default way of specifying rows is by subsetting data frame, after which all information about original row position is lost. To solve this, I needed a mechanism of tracking rows as invisibly for user as possible. This led to creation of <a href="https://echasnovski.github.io/keyholder/">keyholder</a> package (which is also on CRAN now). To learn details about it go to its site or read my <a href="{{< relref "2017-11-20-store-data-about-rows.html" >}}">previous post</a>.</p>
+<p><strong>Use specific rule pack wrappers for certain data units</strong>. Their goal is to create S3 classes for rule packs in order to carry information about data unit of interest through exposing process. All of them always return a list with supplied functions but with changed attribute <code>class</code> (with additional <code>group_vars</code> and <code>group_sep</code> for <code>group_packs()</code>). <strong>Note</strong> that packs might be named inside these functions, which is recommended. If not, names will be imputed during exposing process. Also <strong>note</strong> that supplied functions are not checked to be correct in terms of validating specified data unit. This is done during exposure (exposing process).</p>
+<pre class="r"><code># Data unit. Rule pack is manually named &#39;my_data&#39;
+my_data_packs &lt;- data_packs(my_data = validate_data)
+map(my_data_packs, class)
+## $my_data
+## [1] &quot;data_pack&quot; &quot;rule_pack&quot; &quot;fseq&quot;      &quot;function&quot;
+
+# Group unit. Need to supply grouping variables explicitly
+my_group_packs &lt;- group_packs(validate_groups, .group_vars = c(&quot;vs&quot;, &quot;am&quot;))
+map(my_group_packs, class)
+## [[1]]
+## [1] &quot;group_pack&quot; &quot;rule_pack&quot;  &quot;fseq&quot;       &quot;function&quot;
+
+# Column unit. Need to be rewritten using `rules`
+my_col_packs &lt;- col_packs(
+  my_col = . %&gt;%
+    summarise_if(is_integerish, rules(is_enough_sum = sum(.) &gt;= 14))
+)
+map(my_col_packs, class)
+## $my_col
+## [1] &quot;col_pack&quot;  &quot;rule_pack&quot; &quot;fseq&quot;      &quot;function&quot;
+
+# Row unit. One can supply several rule packs
+my_row_packs &lt;- row_packs(
+  my_row_1 = validate_rows,
+  my_row_2 = . %&gt;% transmute(is_vs_one = vs == 1)
+)
+map(my_row_packs, class)
+## $my_row_1
+## [1] &quot;row_pack&quot;  &quot;rule_pack&quot; &quot;fseq&quot;      &quot;function&quot; 
+## 
+## $my_row_2
+## [1] &quot;row_pack&quot;  &quot;rule_pack&quot; &quot;fseq&quot;      &quot;function&quot;
+
+# Cell unit. Also needs to be rewritten using `rules`.
+my_cell_packs &lt;- cell_packs(
+  my_cell = . %&gt;%
+    transmute_if(is.numeric, rules(is_out = z_score(.) &gt; 1)) %&gt;%
+    slice(-(1:5))
+)
+map(my_cell_packs, class)
+## $my_cell
+## [1] &quot;cell_pack&quot; &quot;rule_pack&quot; &quot;fseq&quot;      &quot;function&quot;</code></pre>
+</div>
+</div>
+<div id="exposing-process" class="section level1">
+<h1>Exposing process</h1>
+<p>After sorting things out with formats of validation result and rule packs it was time to combine them in the main <code>ruler</code>’s function: <code>expose()</code>. I had the following requirements:</p>
+<ul>
+<li>It should be insertable inside common <code>%&gt;%</code> pipelines as smoothly and flexibly as possible. Two main examples are validating data frame before performing some operations with it and actually obtaining results of validation.</li>
+<li>There should be possibility of sequential apply of <code>expose</code> with different rule packs. In this case exposure (validation report) after first call should be updated with new exposure. In other words, the result should be as if those rule packs were both supplied in <code>expose</code> by one call.</li>
+</ul>
+<p>These requirements led to the following main design property of <code>expose</code>: <strong>it never modifies content of input data frame but possibly creates or updates attribute <code>exposure</code> with validation report</strong>. To access validation data there are wrappers <code>get_exposure()</code>, <code>get_report()</code> and <code>get_packs_info()</code>. The whole exposing process can be described as follows:</p>
+<ul>
+<li>Apply all supplied rule packs to keyed with <code>keyholder::use_id</code> version of input data frame.</li>
+<li>Impute names of rule packs based on possible present exposure (from previous use of <code>expose</code>) and validated data units.</li>
+<li>Bind possible present exposure with new ones and create/update attribute <code>exposure</code> with it.</li>
+</ul>
+<p>Also it was decided (for flexibility and convenience) to add following arguments to <code>expose</code>:</p>
+<ul>
+<li><code>.rule_sep</code>. It is a regular expression used to delimit column and function names in the output of scoped <code>dplyr</code> verbs. By default it is a string <code>._.</code> possibly surrounded by punctuation characters. This is done to account of <code>dplyr</code>’s hardcoded use of <code>_</code> in scoped verbs. <strong>Note</strong> that <code>.rule_sep</code> should take into account separator used in <code>rules()</code>.</li>
+<li><code>.remove_obeyers</code>. It is a logical argument indicating whether to automatically remove elements, which obey rules, from tidy validation report. It can be very useful because the usual result of validation is a handful of rule breakers. Without possibility of setting <code>.remove_obeyers</code> to <code>TRUE</code> (which is default) validation report will grow unnecessary big.</li>
+<li><code>.guess</code>. By default <code>expose</code> guesses the type of unsupported rule pack type with algorithm described before. In order to write strict and robust code this can be set to <code>FALSE</code> in which case error will be thrown after detecting unfamiliar pack type.</li>
+</ul>
+<p>Some examples:</p>
+<pre class="r"><code>mtcars_tbl %&gt;%
+  expose(my_data_packs, my_col_packs) %&gt;%
+  get_exposure()
+##   Exposure
+## 
+## Packs info:
+## # A tibble: 2 x 4
+##      name      type             fun remove_obeyers
+##     &lt;chr&gt;     &lt;chr&gt;          &lt;list&gt;          &lt;lgl&gt;
+## 1 my_data data_pack &lt;S3: data_pack&gt;           TRUE
+## 2  my_col  col_pack  &lt;S3: col_pack&gt;           TRUE
+## 
+## Tidy data validation report:
+## # A tibble: 2 x 5
+##      pack          rule   var    id value
+##     &lt;chr&gt;         &lt;chr&gt; &lt;chr&gt; &lt;int&gt; &lt;lgl&gt;
+## 1 my_data       nrow_up  .all     0 FALSE
+## 2  my_col is_enough_sum    am     0 FALSE
+
+# Note that `id` starts from 6 as rows 1:5 were removed from validating
+mtcars_tbl %&gt;%
+  expose(my_cell_packs, .remove_obeyers = FALSE) %&gt;%
+  get_exposure()
+##   Exposure
+## 
+## Packs info:
+## # A tibble: 1 x 4
+##      name      type             fun remove_obeyers
+##     &lt;chr&gt;     &lt;chr&gt;          &lt;list&gt;          &lt;lgl&gt;
+## 1 my_cell cell_pack &lt;S3: cell_pack&gt;          FALSE
+## 
+## Tidy data validation report:
+## # A tibble: 297 x 5
+##      pack   rule   var    id value
+##     &lt;chr&gt;  &lt;chr&gt; &lt;chr&gt; &lt;int&gt; &lt;lgl&gt;
+## 1 my_cell is_out   mpg     6 FALSE
+## 2 my_cell is_out   mpg     7 FALSE
+## 3 my_cell is_out   mpg     8 FALSE
+## 4 my_cell is_out   mpg     9 FALSE
+## 5 my_cell is_out   mpg    10 FALSE
+## # ... with 292 more rows
+
+# Note name imputation and guessing
+mtcars_tbl %&gt;%
+  expose(my_data_packs, .remove_obeyers = FALSE) %&gt;%
+  expose(validate_rows) %&gt;%
+  get_exposure()
+##   Exposure
+## 
+## Packs info:
+## # A tibble: 2 x 4
+##          name      type             fun remove_obeyers
+##         &lt;chr&gt;     &lt;chr&gt;          &lt;list&gt;          &lt;lgl&gt;
+## 1     my_data data_pack &lt;S3: data_pack&gt;          FALSE
+## 2 row_pack..1  row_pack  &lt;S3: row_pack&gt;           TRUE
+## 
+## Tidy data validation report:
+## # A tibble: 3 x 5
+##          pack          rule   var    id value
+##         &lt;chr&gt;         &lt;chr&gt; &lt;chr&gt; &lt;int&gt; &lt;lgl&gt;
+## 1     my_data      nrow_low  .all     0  TRUE
+## 2     my_data       nrow_up  .all     0 FALSE
+## 3 row_pack..1 is_enough_sum  .all    19 FALSE</code></pre>
+</div>
+<div id="act-after-exposure" class="section level1">
+<h1>Act after exposure</h1>
+<p>After creating data frame with attribute <code>exposure</code>, it is pretty straightforward to design how to perform any action. It is implemented in function <code>act_after_exposure</code> with the following arguments:</p>
+<ul>
+<li><code>.tbl</code> which should be the result of using <code>expose()</code>.</li>
+<li><code>.trigger</code>: function which takes <code>.tbl</code> as argument and returns TRUE if some action needs to be performed.</li>
+<li><code>actor</code>: function which takes <code>.tbl</code> as argument and performs the action.</li>
+</ul>
+<p>Basically act_after_exposure() is doing the following:</p>
+<ul>
+<li>Check that <code>.tbl</code> has a proper exposure attribute.</li>
+<li>Compute whether to perform intended action by computing <code>.trigger(.tbl)</code>.</li>
+<li>If trigger results in <code>TRUE</code> then <code>.actor(.tbl)</code> is returned. In other case <code>.tbl</code> is returned.</li>
+</ul>
+<p>It is a good idea that .actor should be doing one of two things:</p>
+<ul>
+<li><strong>Making side effects</strong>. For example throwing an error (if condition in <code>.trigger</code> is met), printing some information and so on. In this case it should return <code>.tbl</code> to be used properly inside a pipe.</li>
+<li><strong>Changing <code>.tbl</code> based on exposure information</strong>. In this case it should return the imputed version of <code>.tbl</code>.</li>
+</ul>
+<p>As a main use case, <code>ruler</code> has function <code>assert_any_breaker</code>. It is a wrapper for <code>act_after_exposure</code> with <code>.trigger</code> checking presence of any breaker in exposure and <code>.actor</code> being notifier about it.</p>
+<pre class="r"><code>mtcars_tbl %&gt;%
+  expose(my_data_packs) %&gt;%
+  assert_any_breaker()
+##   Breakers report
+## Tidy data validation report:
+## # A tibble: 1 x 5
+##      pack    rule   var    id value
+##     &lt;chr&gt;   &lt;chr&gt; &lt;chr&gt; &lt;int&gt; &lt;lgl&gt;
+## 1 my_data nrow_up  .all     0 FALSE
+## Error: assert_any_breaker: Some breakers found in exposure.</code></pre>
+</div>
+<div id="conclusions" class="section level1">
+<h1>Conclusions</h1>
+<ul>
+<li>Design process of a package deserves its own story.</li>
+<li>Package <a href="https://echasnovski.github.io/ruler/">ruler</a> offers tools for dplyr-style exploration and validation of data frame like objects. With its help validation is done with 3 commands/steps each designed for specific purpose.</li>
+</ul>
+{{% spoiler id="sessionInfo" title="sessionInfo()" %}}
+<pre class="r"><code>sessionInfo()
+## R version 3.4.2 (2017-09-28)
+## Platform: x86_64-pc-linux-gnu (64-bit)
+## Running under: Ubuntu 16.04.3 LTS
+## 
+## Matrix products: default
+## BLAS: /usr/lib/openblas-base/libblas.so.3
+## LAPACK: /usr/lib/libopenblasp-r0.2.18.so
+## 
+## locale:
+##  [1] LC_CTYPE=ru_UA.UTF-8       LC_NUMERIC=C              
+##  [3] LC_TIME=ru_UA.UTF-8        LC_COLLATE=ru_UA.UTF-8    
+##  [5] LC_MONETARY=ru_UA.UTF-8    LC_MESSAGES=ru_UA.UTF-8   
+##  [7] LC_PAPER=ru_UA.UTF-8       LC_NAME=C                 
+##  [9] LC_ADDRESS=C               LC_TELEPHONE=C            
+## [11] LC_MEASUREMENT=ru_UA.UTF-8 LC_IDENTIFICATION=C       
+## 
+## attached base packages:
+## [1] methods   stats     graphics  grDevices utils     datasets  base     
+## 
+## other attached packages:
+## [1] bindrcpp_0.2 ruler_0.1.0  purrr_0.2.4  dplyr_0.7.4 
+## 
+## loaded via a namespace (and not attached):
+##  [1] Rcpp_0.12.13     knitr_1.17       bindr_0.1        magrittr_1.5    
+##  [5] tidyselect_0.2.3 R6_2.2.2         rlang_0.1.4      stringr_1.2.0   
+##  [9] tools_3.4.2      htmltools_0.3.6  yaml_2.1.14      rprojroot_1.2   
+## [13] digest_0.6.12    assertthat_0.2.0 tibble_1.3.4     bookdown_0.5    
+## [17] tidyr_0.7.2      glue_1.2.0       evaluate_0.10.1  rmarkdown_1.7   
+## [21] blogdown_0.2     stringi_1.1.5    compiler_3.4.2   keyholder_0.1.1 
+## [25] backports_1.1.1  pkgconfig_2.0.1</code></pre>
+{{% /spoiler %}}
+</div>
