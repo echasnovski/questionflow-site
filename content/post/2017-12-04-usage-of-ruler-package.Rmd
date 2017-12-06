@@ -223,7 +223,7 @@ starwars %>%
 
 - 64 characters haven't appeared in 3 films or more. Those are characters described in `starwars` in rows 8, 9, etc. (counting based on input data).
 
-■ _Does character with `height` less than 100 is a droid?_
+■ _Is character with `height` less than 100 a droid?_
 
 ```{r row-pack-2}
 is_short_droid <- row_packs(
