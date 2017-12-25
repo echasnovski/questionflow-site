@@ -1,0 +1,364 @@
+---
+title: Combined outlier detection with dplyr and ruler
+author: Evgeni Chasnovski
+date: '2017-12-26'
+publishDate: '2017-12-26'
+slug: combined-outlier-detection-with-dplyr-and-ruler
+categories: []
+tags:
+  - rstats
+  - dplyr
+  - ruler
+description: 'Overview of simple outlier detection methods with their combination using dplyr and ruler packages.'
+---
+
+
+
+<div id="prologue" class="section level1">
+<h1>Prologue</h1>
+<p>During the process of data analysis one of the most crucial steps is to identify and account for <a href="https://en.wikipedia.org/wiki/Outlier">outliers</a>, observations that have essentially different nature than most other observations. Their presence can lead to untrustworthy conclusions. The most complicated part of this task is <strong>to define a notion of “outlier”</strong>. After that, it is straightforward to identify them based on given data.</p>
+<p>There are many techniques developed for outlier detection. Majority of them deal with numerical data. This post will describe the most basic ones with their application using <a href="http://dplyr.tidyverse.org/">dplyr</a> and <a href="https://echasnovski.github.io/ruler/">ruler</a> packages.</p>
+<p>After reading this post you will know:</p>
+<ul>
+<li>Most basic outlier detection techniques.</li>
+<li>A way to implement them using <code>dplyr</code> and <code>ruler</code>.</li>
+<li>A way to combine their results in order to obtain a new outlier detection method.</li>
+<li>A way to construct notion of “bad quality diamonds” without prior knowledge of this topic (as a happy consequence of previous point).</li>
+</ul>
+</div>
+<div id="overview" class="section level1">
+<h1>Overview</h1>
+<p>We will perform an analysis with the goal to find not typical diamonds listed in <a href="http://ggplot2.tidyverse.org/reference/diamonds.html">diamonds</a> dataset from <a href="http://ggplot2.tidyverse.org/">ggplot2</a> package. Here one observation represents one diamond and is stored as a row in data frame.</p>
+<p>The way we will do that is <strong>by combining different outlier detection techniques to identify rows which are “strong outliers”</strong>, i.e. which might by considered outliers based on several methods.</p>
+<p>Packages required for this analysis:</p>
+<pre class="r"><code>library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ruler)</code></pre>
+</div>
+<div id="outlier-detection-methods" class="section level1">
+<h1>Outlier detection methods</h1>
+<p>To do convenient outlier detection with <code>ruler</code> it is better to define notion of <strong>non-outlier</strong> in form of the rule “Observation <strong>is not</strong> an outlier if …”. This way actual outliers are considered as <strong>rule breakers</strong>, objects of interest of <code>ruler</code> package. <strong>Note</strong> that definition of non-outlier is essentially a definition of outlier because of total two possibilities.</p>
+<div id="z-score" class="section level2">
+<h2>Z-score</h2>
+<p><a href="https://en.wikipedia.org/wiki/Standard_score">Z-score</a>, also called a standard score, of an observation is [broadly speaking] a distance from the population center measured in number of normalization units. The default choice for center is sample mean and for normalization unit is standard deviation.</p>
+<p>⬛ <em>Observation is not an outlier based on z-score</em> if its absolute value of default z-score is lower then some threshold (popular choice is 3).</p>
+<p>Here is the function for identifying non-outliers based on z-score:</p>
+<pre class="r"><code>isnt_out_z &lt;- function(x, thres = 3, na.rm = TRUE) {
+  abs(x - mean(x, na.rm = na.rm)) &lt;= thres * sd(x, na.rm = na.rm)
+}</code></pre>
+<p>It takes a numeric vector as input and returns logical vector of the same length indicating whether input value is a non-outlier.</p>
+</div>
+<div id="z-score-with-mad" class="section level2">
+<h2>Z-score with MAD</h2>
+<p><a href="https://en.wikipedia.org/wiki/Median_absolute_deviation">Median Absolute Deviation</a> is a robust normalization unit based on median as a population center. In order to use MAD “as a consistent estimator for the estimation of the standard deviation” one takes its value multiplied by a factor. This way base R function <a href="https://www.rdocumentation.org/packages/stats/versions/3.4.3/topics/mad">mad</a> is implemented.</p>
+<p>⬛ <em>Observation is not an outlier based on MAD</em> if its absolute value of z-score with median as center and MAD as normalization unit is lower then some threshold (popular choice is 3).</p>
+<pre class="r"><code>isnt_out_mad &lt;- function(x, thres = 3, na.rm = TRUE) {
+  abs(x - median(x, na.rm = na.rm)) &lt;= thres * mad(x, na.rm = na.rm)
+}</code></pre>
+</div>
+<div id="tukeys-fences" class="section level2">
+<h2>Tukey’s fences</h2>
+<p><a href="https://en.wikipedia.org/wiki/Outlier#Tukey&#39;s_fences">Tukey’s fences</a> is a technique used in box plots. The non-outlier range is defined with <span class="math inline">\([Q_1 - k(Q_3 - Q_1),~ Q_3 + k(Q_3 - Q_1)]\)</span>, where <span class="math inline">\(Q_1\)</span> and <span class="math inline">\(Q_3\)</span> are the lower and upper quartiles respectively, <span class="math inline">\(k\)</span> - some nonnegative constant (popular choice is 1.5).</p>
+<p>⬛ <em>Observation is not an outlier based on Tukey’s fences</em> if its value lies in non-outlier range.</p>
+<pre class="r"><code>isnt_out_tukey &lt;- function(x, k = 1.5, na.rm = TRUE) {
+  quar &lt;- quantile(x, probs = c(0.25, 0.75), na.rm = na.rm)
+  iqr &lt;- diff(quar)
+  
+  (quar[1] - k * iqr &lt;= x) &amp; (x &lt;= quar[2] + k * iqr)
+}</code></pre>
+</div>
+<div id="mahalanobis-distance" class="section level2">
+<h2>Mahalanobis distance</h2>
+<p>All previous approaches were created for univariate numerical data. To detect outliers in multivariate case one can use <a href="https://en.wikipedia.org/wiki/Mahalanobis_distance">Mahalanobis distance</a> to reduce to univariate case and then apply known techniques.</p>
+<p>⬛ <em>Observation is not an outlier based on Mahalanobis distance</em> if its distance is not an outlier.</p>
+<pre class="r"><code>maha_dist &lt;- . %&gt;% select_if(is.numeric) %&gt;%
+    mahalanobis(center = colMeans(.), cov = cov(.))
+
+isnt_out_maha &lt;- function(tbl, isnt_out_f, ...) {
+  tbl %&gt;% maha_dist() %&gt;% isnt_out_f(...)
+}</code></pre>
+<p>This function takes as input a data frame of interest (with possible non-numeric columns which are ignored) and function performing univariate outlier detection. It returns a logical vector of the same length as number of rows in input data frame.</p>
+<p>To read more about practical usefulness of Mahalanobis distance in detecting outliers go to <a href="https://www.steffenruefer.com/2016/12/outlier-detection-with-mahalanobis-distance/">Steffen’s very helpful post</a>.</p>
+</div>
+</div>
+<div id="using-dplyr-and-ruler" class="section level1">
+<h1>Using dplyr and ruler</h1>
+<div id="definition-of-non-outlier-row" class="section level2">
+<h2>Definition of non-outlier row</h2>
+<p>Package <code>ruler</code>, based on <code>dplyr</code> grammar of data manipulation, offers tools for validating the following data units: data as a whole, group [of rows] as a whole, column as a whole, row as a whole, cell. Our primary interest is row as a whole. However, using this framework, we can construct several approaches for definition of the non-outlier row:</p>
+<ol style="list-style-type: decimal">
+<li><em>Row is not an outlier based on some column</em> if it doesn’t contain outlier (computed based on the target column) on the intersection with that column. In other words, first a univariate outlier detection is performed based solely on data from target column and then all rows containing non-outliers are named non-outlier rows.</li>
+<li><em>Row is not an outlier based on Mahalanobis distance</em> if its distance (computed based on the selected numeric columns) is not an outlier.</li>
+<li><em>Row is not an outlier based on grouping</em> if it is a part of a non-outlier group [of rows]. A group [of rows] is not an outlier if its summary value is not an outlier among summary values of other groups.</li>
+</ol>
+<p><strong>Note</strong> that all listed approached depend on the choice of the univariate outlier detection method. We will use all three previously listed univariate techniques.</p>
+<pre class="r"><code>isnt_out_funs &lt;- funs(
+  z = isnt_out_z,
+  mad = isnt_out_mad,
+  tukey = isnt_out_tukey
+)</code></pre>
+</div>
+<div id="implementation" class="section level2">
+<h2>Implementation</h2>
+<p>In <code>ruler</code> framework rules are defined in <a href="https://echasnovski.github.io/ruler/reference/rule-packs.html">packs</a> (to learn more go to <code>ruler</code> <a href="https://echasnovski.github.io/ruler/">README</a> and <a href="https://echasnovski.github.io/ruler/articles/">vignettes</a>).</p>
+<div id="column-based-non-outlier-rows" class="section level3">
+<h3>Column based non-outlier rows</h3>
+<p>For <code>diamonds</code> dataset rules for column based non-outlier rows can be defined based on 7 numeric columns and 3 presented univariate detection methods. There is a convenient way of computing all them at once using <a href="http://dplyr.tidyverse.org/reference/summarise_all.html">scoped variant</a> of <code>dplyr::transmute()</code>:</p>
+<pre class="r"><code>diamonds %&gt;% transmute_if(is.numeric, isnt_out_funs)
+## # A tibble: 53,940 x 21
+##   carat_z depth_z table_z price_z   x_z   y_z   z_z carat_mad depth_mad
+##     &lt;lgl&gt;   &lt;lgl&gt;   &lt;lgl&gt;   &lt;lgl&gt; &lt;lgl&gt; &lt;lgl&gt; &lt;lgl&gt;     &lt;lgl&gt;     &lt;lgl&gt;
+## 1    TRUE    TRUE    TRUE    TRUE  TRUE  TRUE  TRUE      TRUE      TRUE
+## 2    TRUE    TRUE    TRUE    TRUE  TRUE  TRUE  TRUE      TRUE      TRUE
+## 3    TRUE   FALSE   FALSE    TRUE  TRUE  TRUE  TRUE      TRUE     FALSE
+## 4    TRUE    TRUE    TRUE    TRUE  TRUE  TRUE  TRUE      TRUE      TRUE
+## 5    TRUE    TRUE    TRUE    TRUE  TRUE  TRUE  TRUE      TRUE      TRUE
+## # ... with 5.394e+04 more rows, and 12 more variables: table_mad &lt;lgl&gt;,
+## #   price_mad &lt;lgl&gt;, x_mad &lt;lgl&gt;, y_mad &lt;lgl&gt;, z_mad &lt;lgl&gt;,
+## #   carat_tukey &lt;lgl&gt;, depth_tukey &lt;lgl&gt;, table_tukey &lt;lgl&gt;,
+## #   price_tukey &lt;lgl&gt;, x_tukey &lt;lgl&gt;, y_tukey &lt;lgl&gt;, z_tukey &lt;lgl&gt;</code></pre>
+<p>The result has outputs for 21 methods. Their names are of the form &lt;column name&gt;_&lt;method name&gt;. So the name ‘carat_z’ is interpreted as result of univariate method with name ‘z’ for column with name ‘carat’.</p>
+</div>
+<div id="mahalanobis-based-non-outlier-rows" class="section level3">
+<h3>Mahalanobis based non-outlier rows</h3>
+<p>To define non-outlier rows based on Mahalanobis distance one should apply univariate method for distances computed for some subset of numeric columns. To simplify a little bit, we will one “subset” with all numeric columns and all listed methods:</p>
+<pre class="r"><code>diamonds %&gt;%
+  transmute(maha = maha_dist(.)) %&gt;%
+  transmute_at(vars(maha = maha), isnt_out_funs)
+## # A tibble: 53,940 x 3
+##   maha_z maha_mad maha_tukey
+##    &lt;lgl&gt;    &lt;lgl&gt;      &lt;lgl&gt;
+## 1   TRUE     TRUE       TRUE
+## 2   TRUE    FALSE      FALSE
+## 3   TRUE    FALSE      FALSE
+## 4   TRUE     TRUE       TRUE
+## 5   TRUE     TRUE       TRUE
+## # ... with 5.394e+04 more rows</code></pre>
+<p>The result has outputs for 3 methods. Their names are considered as method names. <strong>Note</strong> that with this approach outlier rows are not only the ones far from multivariate center, but also the ones that are unnaturally close to it.</p>
+</div>
+<div id="group-based-non-outlier-rows" class="section level3">
+<h3>Group based non-outlier rows</h3>
+<p>Definition of non-outlier rows based on grouping depends on group summary function and univariate outlier detection method. As grouping column we will choose all non-numeric columns (<code>cut</code>, <code>color</code> and <code>clarity</code>) <a href="http://tidyr.tidyverse.org/reference/unite.html">united</a> into one called <code>group</code> (for later easier imputation of non-outlier rows). As reasonable summary functions we will choose mean value of some numeric column (total of 7 functions):</p>
+<pre class="r"><code>data_tbl &lt;- diamonds %&gt;%
+  unite(col = &quot;group&quot;, cut, color, clarity)
+
+compute_group_non_outliers &lt;- . %&gt;%
+  # Compute per group mean values of columns
+  group_by(group) %&gt;%
+  summarise_if(is.numeric, mean) %&gt;%
+  ungroup() %&gt;%
+  # Detect outliers among groups
+  mutate_if(is.numeric, isnt_out_funs) %&gt;%
+  # Remove unnecessary columns
+  select_if(Negate(is.numeric))
+
+data_tbl %&gt;% compute_group_non_outliers()
+## # A tibble: 276 x 22
+##        group carat_z depth_z table_z price_z   x_z   y_z   z_z carat_mad
+##        &lt;chr&gt;   &lt;lgl&gt;   &lt;lgl&gt;   &lt;lgl&gt;   &lt;lgl&gt; &lt;lgl&gt; &lt;lgl&gt; &lt;lgl&gt;     &lt;lgl&gt;
+## 1  Fair_D_I1   FALSE    TRUE    TRUE    TRUE  TRUE  TRUE  TRUE     FALSE
+## 2  Fair_D_IF    TRUE    TRUE    TRUE    TRUE  TRUE  TRUE  TRUE      TRUE
+## 3 Fair_D_SI1    TRUE    TRUE    TRUE    TRUE  TRUE  TRUE  TRUE      TRUE
+## 4 Fair_D_SI2    TRUE    TRUE    TRUE    TRUE  TRUE  TRUE  TRUE      TRUE
+## 5 Fair_D_VS1    TRUE    TRUE    TRUE    TRUE  TRUE  TRUE  TRUE      TRUE
+## # ... with 271 more rows, and 13 more variables: depth_mad &lt;lgl&gt;,
+## #   table_mad &lt;lgl&gt;, price_mad &lt;lgl&gt;, x_mad &lt;lgl&gt;, y_mad &lt;lgl&gt;,
+## #   z_mad &lt;lgl&gt;, carat_tukey &lt;lgl&gt;, depth_tukey &lt;lgl&gt;, table_tukey &lt;lgl&gt;,
+## #   price_tukey &lt;lgl&gt;, x_tukey &lt;lgl&gt;, y_tukey &lt;lgl&gt;, z_tukey &lt;lgl&gt;</code></pre>
+<p>The result has outputs for 21 methods applied to the 276 groups. Their names are of the form &lt;column name for summary function&gt;_&lt;method name&gt;. So the name ‘carat_z’ is interpreted as result of method ‘z’ for summary function equal to mean value of ‘carat’ column. Column <code>group</code> defines names of the groupings.</p>
+</div>
+</div>
+<div id="exposure" class="section level2">
+<h2>Exposure</h2>
+<p>Column and Mahalanobis based definition of non-outlier rows can be expressed with <a href="https://echasnovski.github.io/ruler/reference/row-pack.html">row packs</a> and group based - as <a href="https://echasnovski.github.io/ruler/reference/group-pack.html">group packs</a>.</p>
+<pre class="r"><code>row_packs_isnt_out &lt;- row_packs(
+  # Non-outliers based on some column
+  column = . %&gt;% transmute_if(is.numeric, isnt_out_funs),
+  # Non-outliers based on Mahalanobis distance
+  maha = . %&gt;% transmute(maha = maha_dist(.)) %&gt;%
+    transmute_at(vars(maha = maha), isnt_out_funs)
+)
+
+group_packs_isnt_out &lt;- group_packs(
+  # Non-outliers based on grouping
+  group = compute_group_non_outliers,
+  .group_vars = &quot;group&quot;
+)</code></pre>
+<p>Application of all those packs is called <a href="https://echasnovski.github.io/ruler/reference/expose.html">exposing process</a>. The result is an <a href="https://echasnovski.github.io/ruler/reference/exposure.html">exposure</a> from which we can extract <a href="https://echasnovski.github.io/ruler/reference/ruler-report.html">tidy data validation report</a> using <code>get_report</code>.</p>
+<pre class="r"><code># Don&#39;t remove obeyers to compute total number of applied rules
+full_report &lt;- data_tbl %&gt;%
+  expose(row_packs_isnt_out, group_packs_isnt_out,
+         .remove_obeyers = FALSE) %&gt;%
+  get_report()
+
+used_rules &lt;- full_report %&gt;%
+  distinct(pack, rule)
+
+breaker_report &lt;- full_report %&gt;%
+  filter(!(value %in% TRUE))</code></pre>
+<p><code>used_rules</code> contains data about all definitions of non-outlier rows applied to data. They are encoded with combination of columns <code>pack</code> and <code>rule</code>.</p>
+<p><code>breaker_report</code> contains data about data units that break certain rules. Packs <code>column</code> and <code>maha</code> has actual row numbers of <code>data_tbl</code> listed in <code>id</code> column of report (for rows which should be considered as outliers).</p>
+<p>On the other hand, pack <code>group</code> defines group pack and is represented in <code>breaker_report</code> with <code>id</code> 0. To obtain row outliers based on grouping we need to expand those rows with information about rows in the data that belong to those groups. This can be done using <code>dplyr::left_join()</code>:</p>
+<pre class="r"><code>group_breakers &lt;- breaker_report %&gt;%
+  # Filter group packs
+  filter(pack == &quot;group&quot;) %&gt;%
+  # Expand rows by matching group with its rows
+  select(-id) %&gt;%
+  left_join(
+    y = data_tbl %&gt;% transmute(var = group, id = 1:n()),
+    by = &quot;var&quot;
+  ) %&gt;%
+  select(pack, rule, var, id, value)
+
+outliers &lt;- bind_rows(
+  breaker_report %&gt;% filter(pack != &quot;group&quot;),
+  group_breakers
+) %&gt;%
+  select(pack, rule, id)
+
+# Not all group based definitions resulted with outliers
+outliers %&gt;%
+  count(pack, rule) %&gt;%
+  filter(pack == &quot;group&quot;) %&gt;%
+  print(n = Inf)
+## # A tibble: 13 x 3
+##     pack        rule     n
+##    &lt;chr&gt;       &lt;chr&gt; &lt;int&gt;
+##  1 group   carat_mad    37
+##  2 group carat_tukey    37
+##  3 group     carat_z    29
+##  4 group   depth_mad  1093
+##  5 group depth_tukey  1016
+##  6 group     depth_z   156
+##  7 group   price_mad   209
+##  8 group price_tukey  1146
+##  9 group     price_z    44
+## 10 group   table_mad   920
+## 11 group table_tukey     8
+## 12 group     table_z     7
+## 13 group         z_z    23</code></pre>
+<p>Tibble <code>outliers</code> contains data about outlier rows. Combination of columns <code>pack</code> and <code>rule</code> defines non-outlier/outlier definition approach and column <code>id</code> defines row number of input data frame that should be considered an outlier based on the definition.</p>
+<p>Definitions with most outliers are as follows:</p>
+<pre class="r"><code>outliers %&gt;%
+  count(pack, rule, sort = TRUE)
+## # A tibble: 37 x 3
+##     pack        rule     n
+##    &lt;chr&gt;       &lt;chr&gt; &lt;int&gt;
+## 1   maha    maha_mad  6329
+## 2   maha  maha_tukey  5511
+## 3 column   price_mad  5386
+## 4 column price_tukey  3540
+## 5 column   table_mad  2560
+## # ... with 32 more rows</code></pre>
+<p>Two out of three Mahalanobis based definition yielded the most row outliers.</p>
+</div>
+<div id="combination" class="section level2">
+<h2>Combination</h2>
+<p>Given <code>outliers</code> data frame, one can do whatever he/she wants to identify outliers. Here we will use the basic combination approach based on average score.</p>
+<p><em>Combined outlier detection score</em> for certain row can be defined as <strong>share of applied methods that tagged it as outlier</strong>. Alternatively one can define it just as number of those methods as it will only change absolute value of the result and not the order.</p>
+<pre class="r"><code>outlier_score &lt;- outliers %&gt;%
+  group_by(id) %&gt;%
+  # nrow(used_rules) equals total number of applied methods
+  summarise(score = n() / nrow(used_rules))
+
+# Top 10 outliers
+outlier_score %&gt;% arrange(desc(score)) %&gt;% slice(1:10)
+## # A tibble: 10 x 2
+##       id     score
+##    &lt;int&gt;     &lt;dbl&gt;
+##  1 26432 0.5777778
+##  2 27416 0.5777778
+##  3 27631 0.5777778
+##  4 27131 0.4666667
+##  5 23645 0.4222222
+##  6 26445 0.4222222
+##  7 26745 0.4000000
+##  8 27430 0.4000000
+##  9 15952 0.3777778
+## 10 17197 0.3777778</code></pre>
+<p>Finally we will tag those rows as <strong>strong outliers</strong> which has score more than 0.2 (subjective threshold which should be researched more).</p>
+<pre class="r"><code>diam_tbl &lt;- diamonds %&gt;%
+  mutate(id = 1:n()) %&gt;%
+  left_join(y = outlier_score, by = &quot;id&quot;) %&gt;%
+  mutate(
+    score = coalesce(score, 0),
+    is_out = if_else(score &gt; 0.2, &quot;Outlier&quot;, &quot;Not outlier&quot;)
+  )
+
+# Total number of outliers
+sum(diam_tbl$score &gt; 0.2)
+## [1] 161</code></pre>
+<p>Tibble <code>diam_tbl</code> is basically the <code>diamonds</code> but with three more columns: <code>id</code> for row number, <code>score</code> for combined outlier score and <code>is_out</code> for non-outlier/outlier tag.</p>
+<p>Plots illustrating strong outliers:</p>
+<pre class="r"><code>theme_set(theme_bw())
+
+plot_outliers &lt;- function(tbl, x, y, facet_var) {
+  tbl %&gt;%
+    arrange(is_out) %&gt;%
+    ggplot(aes_string(x, y, colour = &quot;is_out&quot;)) +
+      geom_point() +
+      facet_wrap(facets = facet_var) +
+      scale_colour_manual(values = c(&quot;#AAAAAA&quot;, &quot;#004080&quot;)) +
+      guides(colour = guide_legend(title = NULL,
+                                   override.aes = list(size = 4))) +
+      labs(title = paste0(&quot;Strong outliers illustration by &quot;, facet_var)) +
+      theme(legend.position = &quot;bottom&quot;,
+            legend.text = element_text(size = 14))
+}
+
+diam_tbl %&gt;% plot_outliers(&quot;carat&quot;, &quot;price&quot;, facet_var = &quot;cut&quot;)</code></pre>
+<p><img src="/post/2017-12-26-combined-outlier-detection-with-dplyr-and-ruler_files/figure-html/illustrating-plots-1.png" width="864" /></p>
+<pre class="r"><code>
+diam_tbl %&gt;% plot_outliers(&quot;x&quot;, &quot;depth&quot;, facet_var = &quot;color&quot;)</code></pre>
+<p><img src="/post/2017-12-26-combined-outlier-detection-with-dplyr-and-ruler_files/figure-html/illustrating-plots-2.png" width="864" /></p>
+<pre class="r"><code>
+diam_tbl %&gt;% plot_outliers(&quot;price&quot;, &quot;table&quot;, facet_var = &quot;clarity&quot;)</code></pre>
+<p><img src="/post/2017-12-26-combined-outlier-detection-with-dplyr-and-ruler_files/figure-html/illustrating-plots-3.png" width="864" /></p>
+<p>Based on those plots we see the complicated nature of “strong outliers”. They are not necessary located “on the edge” of two-dimensional scatter plots, but most extreme cases are tagged as outliers.</p>
+<p>Also one interesting observation: most outliers are concentrated in the combination of “Fair” cut, “J” colour and “I1” clarity which are worst options among their features. This fact might be interpreted as <strong>suggested combined outlier detection approach tagged really bad diamonds as outliers without prior knowledge about diamond quality</strong>.</p>
+</div>
+</div>
+<div id="conclusions" class="section level1">
+<h1>Conclusions</h1>
+<ul>
+<li>Using only basic outlier detection methods one can achieve insightful results by combining them. Observations which are tagged as outlier by more than some threshold number of methods might be named as “strong outliers”. Those should be considered as outliers based on the whole data rather then on separate features.</li>
+<li>With <code>ruler</code> combining results of several outlier detection methods is straightforward due to the format of tidy data validation report.</li>
+<li>Suggested “strong outlier” observations in <code>diamonds</code> dataset are not only those with extreme numerical values but also ones representing “bad quality” diamonds. This is achieved without prior knowledge of “diamond quality” notion.</li>
+</ul>
+{{% spoiler id="sessionInfo" title="sessionInfo()" %}}
+<pre class="r"><code>sessionInfo()
+## R version 3.4.3 (2017-11-30)
+## Platform: x86_64-pc-linux-gnu (64-bit)
+## Running under: Ubuntu 16.04.3 LTS
+## 
+## Matrix products: default
+## BLAS: /usr/lib/openblas-base/libblas.so.3
+## LAPACK: /usr/lib/libopenblasp-r0.2.18.so
+## 
+## locale:
+##  [1] LC_CTYPE=ru_UA.UTF-8       LC_NUMERIC=C              
+##  [3] LC_TIME=ru_UA.UTF-8        LC_COLLATE=ru_UA.UTF-8    
+##  [5] LC_MONETARY=ru_UA.UTF-8    LC_MESSAGES=ru_UA.UTF-8   
+##  [7] LC_PAPER=ru_UA.UTF-8       LC_NAME=C                 
+##  [9] LC_ADDRESS=C               LC_TELEPHONE=C            
+## [11] LC_MEASUREMENT=ru_UA.UTF-8 LC_IDENTIFICATION=C       
+## 
+## attached base packages:
+## [1] methods   stats     graphics  grDevices utils     datasets  base     
+## 
+## other attached packages:
+## [1] bindrcpp_0.2  ruler_0.1.0   ggplot2_2.2.1 tidyr_0.7.2   dplyr_0.7.4  
+## 
+## loaded via a namespace (and not attached):
+##  [1] Rcpp_0.12.14     knitr_1.17       bindr_0.1        magrittr_1.5    
+##  [5] tidyselect_0.2.3 munsell_0.4.3    colorspace_1.3-2 R6_2.2.2        
+##  [9] rlang_0.1.4      plyr_1.8.4       stringr_1.2.0    tools_3.4.3     
+## [13] grid_3.4.3       gtable_0.2.0     htmltools_0.3.6  lazyeval_0.2.1  
+## [17] yaml_2.1.16      rprojroot_1.2    digest_0.6.13    assertthat_0.2.0
+## [21] tibble_1.3.4     bookdown_0.5     purrr_0.2.4      glue_1.2.0      
+## [25] evaluate_0.10.1  rmarkdown_1.8    blogdown_0.4     labeling_0.3    
+## [29] stringi_1.1.6    keyholder_0.1.1  compiler_3.4.3   scales_0.5.0    
+## [33] backports_1.1.2  pkgconfig_2.0.1</code></pre>
+{{% /spoiler %}}
+</div>
