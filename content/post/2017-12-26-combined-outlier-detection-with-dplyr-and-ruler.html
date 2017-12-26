@@ -23,7 +23,7 @@ description: 'Overview of simple outlier detection methods with their combinatio
 <li>Most basic outlier detection techniques.</li>
 <li>A way to implement them using <code>dplyr</code> and <code>ruler</code>.</li>
 <li>A way to combine their results in order to obtain a new outlier detection method.</li>
-<li>A way to construct notion of “bad quality diamonds” without prior knowledge of this topic (as a happy consequence of previous point).</li>
+<li>A way to discover notion of “diamond quality” without prior knowledge of this topic (as a happy consequence of previous point).</li>
 </ul>
 </div>
 <div id="overview" class="section level1">
@@ -316,7 +316,27 @@ diam_tbl %&gt;% plot_outliers(&quot;x&quot;, &quot;depth&quot;, facet_var = &quo
 diam_tbl %&gt;% plot_outliers(&quot;price&quot;, &quot;table&quot;, facet_var = &quot;clarity&quot;)</code></pre>
 <p><img src="/post/2017-12-26-combined-outlier-detection-with-dplyr-and-ruler_files/figure-html/illustrating-plots-3.png" width="864" /></p>
 <p>Based on those plots we see the complicated nature of “strong outliers”. They are not necessary located “on the edge” of two-dimensional scatter plots, but most extreme cases are tagged as outliers.</p>
-<p>Also one interesting observation: most outliers are concentrated in the combination of “Fair” cut, “J” colour and “I1” clarity which are worst options among their features. This fact might be interpreted as <strong>suggested combined outlier detection approach tagged really bad diamonds as outliers without prior knowledge about diamond quality</strong>.</p>
+<p>Also one interesting observation: most outliers are concentrated in the combination of “Fair” cut, “J” colour and “I1” clarity which are worst options among their features. The reason of this effect is group-based definitions of non-outliers which tagged certain groups more than others:</p>
+<pre class="r"><code>breaker_report %&gt;%
+  filter(pack == &quot;group&quot;) %&gt;%
+  count(var, sort = TRUE) %&gt;%
+  print(n = 10)
+## # A tibble: 47 x 2
+##            var     n
+##          &lt;chr&gt; &lt;int&gt;
+##  1   Fair_D_I1     7
+##  2   Fair_J_I1     7
+##  3 Fair_H_VVS1     6
+##  4  Ideal_J_I1     6
+##  5 Fair_J_VVS1     5
+##  6 Fair_G_VVS1     4
+##  7 Fair_D_VVS1     3
+##  8   Fair_E_I1     3
+##  9   Fair_F_I1     3
+## 10   Fair_H_I1     3
+## # ... with 37 more rows</code></pre>
+<p>Here we see that “Fair” cut is among majority of top breaker groups. There are also some interesting combinations: <code>Fair_D_I1</code> (“worst”-“best”-“worst”), <code>Fair_J_I1</code> (“worst”-“worst”-“worst”), <code>Ideal_J_I1</code> (“best”-“worst”-“worst”).</p>
+<p>This fact might be interpreted as <strong>suggested combined outlier detection approach discovered notion of diamond quality without prior knowledge about it</strong>.</p>
 </div>
 </div>
 <div id="conclusions" class="section level1">
@@ -324,7 +344,7 @@ diam_tbl %&gt;% plot_outliers(&quot;price&quot;, &quot;table&quot;, facet_var = 
 <ul>
 <li>Using only basic outlier detection methods one can achieve insightful results by combining them. Observations which are tagged as outlier by more than some threshold number of methods might be named as “strong outliers”. Those should be considered as outliers based on the whole data rather then on separate features.</li>
 <li>With <code>ruler</code> combining results of several outlier detection methods is straightforward due to the format of tidy data validation report.</li>
-<li>Suggested “strong outlier” observations in <code>diamonds</code> dataset are not only those with extreme numerical values but also ones representing “bad quality” diamonds. This is achieved without prior knowledge of “diamond quality” notion.</li>
+<li>Suggested “strong outlier” observations in <code>diamonds</code> dataset are not only those with extreme numerical values but also ones based on quality of diamonds. This is achieved without prior knowledge of “diamond quality” notion.</li>
 </ul>
 {{% spoiler id="sessionInfo" title="sessionInfo()" %}}
 <pre class="r"><code>sessionInfo()

@@ -43,7 +43,7 @@ After reading this post you will know:
 - Most basic outlier detection techniques.
 - A way to implement them using `dplyr` and `ruler`.
 - A way to combine their results in order to obtain a new outlier detection method.
-- A way to construct notion of "bad quality diamonds" without prior knowledge of this topic (as a happy consequence of previous point).
+- A way to discover notion of "diamond quality" without prior knowledge of this topic (as a happy consequence of previous point).
 
 # Overview
 
@@ -334,13 +334,24 @@ diam_tbl %>% plot_outliers("price", "table", facet_var = "clarity")
 
 Based on those plots we see the complicated nature of "strong outliers". They are not necessary located "on the edge" of two-dimensional scatter plots, but most extreme cases are tagged as outliers.
 
-Also one interesting observation: most outliers are concentrated in the combination of "Fair" cut, "J" colour and "I1" clarity which are worst options among their features. This fact might be interpreted as __suggested combined outlier detection approach tagged really bad diamonds as outliers without prior knowledge about diamond quality__.
+Also one interesting observation: most outliers are concentrated in the combination of "Fair" cut, "J" colour and "I1" clarity which are worst options among their features. The reason of this effect is group-based definitions of non-outliers which tagged certain groups more than others:
+
+```{r group-based-definitions-summary}
+breaker_report %>%
+  filter(pack == "group") %>%
+  count(var, sort = TRUE) %>%
+  print(n = 10)
+```
+
+Here we see that "Fair" cut is among majority of top breaker groups. There are also some interesting combinations: `Fair_D_I1` ("worst"-"best"-"worst"), `Fair_J_I1` ("worst"-"worst"-"worst"), `Ideal_J_I1` ("best"-"worst"-"worst").
+
+This fact might be interpreted as __suggested combined outlier detection approach discovered notion of diamond quality without prior knowledge about it__.
 
 # Conclusions
 
 - Using only basic outlier detection methods one can achieve insightful results by combining them. Observations which are tagged as outlier by more than some threshold number of methods might be named as "strong outliers". Those should be considered as outliers based on the whole data rather then on separate features.
 - With `ruler` combining results of several outlier detection methods is straightforward due to the format of tidy data validation report.
-- Suggested "strong outlier" observations in `diamonds` dataset are not only those with extreme numerical values but also ones representing "bad quality" diamonds. This is achieved without prior knowledge of "diamond quality" notion.
+- Suggested "strong outlier" observations in `diamonds` dataset are not only those with extreme numerical values but also ones based on quality of diamonds. This is achieved without prior knowledge of "diamond quality" notion.
 
 `r blogdown::shortcode("spoiler", id = '\"sessionInfo\"', title = '\"sessionInfo()\"')`
 
