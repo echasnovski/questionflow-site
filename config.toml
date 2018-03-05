@@ -4,6 +4,7 @@ title = "QuestionFlow"
 theme = "minimal"
 ignoreFiles = ["\\.Rmd$", "\\.Rmarkdown$", "_files$", "_cache$"]
 GoogleAnalytics = "UA-107291782-1"
+disqusShortname = "questionflow"
 
 [params]
     author = "Evgeni Chasnovski"
