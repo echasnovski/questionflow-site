@@ -1,0 +1,214 @@
+---
+title: Tao of Tidygraph
+author: Evgeni Chasnovski
+date: '2018-03-06'
+publishDate: '2018-03-06'
+slug: tao-of-tidygraph
+categories: []
+tags:
+  - rstats
+  - tidygraph
+  - ggraph
+description: 'Analysis of "Tao Te Programming" alliance graph within tidy network analysis framework.'
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  eval = TRUE,
+  collapse = TRUE,
+  fig.width = 9
+)
+options(tibble.print_min = 5, tibble.print_max = 10)
+
+library(igraph)
+
+library(taoteprog)
+library(tidyverse)
+library(tidygraph)
+library(ggraph)
+
+collapse <- function(x, coll = ", ") {
+  paste0('"', x, '"', collapse = coll)
+}
+
+set.seed(201803)
+```
+
+# Prologue
+
+Quite some time ago I read the fantastic ["Tao Te Programming"](http://www.burns-stat.com/documents/books/tao-te-programming/) book by [Patrick Burns](http://www.burns-stat.com). You can know this author from his everlasting work ["The R Inferno"](http://www.burns-stat.com/documents/books/the-r-inferno/).
+
+"Tao Te Programming" is a vision about what a good programming should be. It is written in [programming] language-agnostic fashion but mainly with R in mind. It is organized in `r nrow(ttp_chapters)` chapters with some distinctive feature: at the end of the most chapters there are lists of chapters-"allies" and chapters-"opponents" to the chapter in question. During the reading I was really interested in the properties of [graph](https://en.wikipedia.org/wiki/Graph_(discrete_mathematics)) that is created with these connections.
+
+From the other side of my life, I constantly hear about packages for tidy network analysis: [tidygraph](https://github.com/thomasp85/tidygraph) and [ggraph](https://github.com/thomasp85/ggraph). Both created by "compulsive package developer" (not sure, where to put "great" in this description) [Thomas Lin Pedersen](https://www.data-imaginist.com/). They provide tidy tools for creating, manipulating and plotting network data. It happened, that I didn't have an opportunity to work with them... until now.
+
+# Overview
+
+This post is mainly about exploration of "Tao Te Programming" alliance graph using `tidygraph` and `ggraph`, with a few descriptions about those package functionality (for a thorough overview check out this [speach](https://www.rstudio.com/resources/videos/tidying-up-your-network-analysis-with-tidygraph-and-ggraph/) by Thomas at rstudio::conf 2018). It will cover:
+
+- __Creation__, __visualization__ and __exploration__ of alliance graph.
+- Determination of "central programming advice" or __"Why you should learn to dance the Debug 2-Step"__.
+
+Data and code can be found in my [taoteprog](https://github.com/echasnovski/taoteprog) repository. It is a project with R package structure which can be installed with `devtools::install_github("echasnovski/taoteprog")` (for easier data access). Public sharing of these data and results of this analysis is agreed with Mr. Burns by e-mail.
+
+Setup:
+
+```{r library, eval = FALSE}
+library(taoteprog)
+library(tidyverse)
+library(tidygraph)
+library(ggraph)
+
+set.seed(201803)
+```
+
+# Alliance graph
+
+## Creation
+
+Alliance graph is a set of chapters-nodes which created based on "ally" and "opponent" connections. It is created using the following data from `taoteprog` (which I manually created while reading a book):
+
+- `ttp_chapters` - a [tibble](http://tibble.tidyverse.org/) with chapter data (column `chapter` for its number and `name` for its name). The whole list of chapters can be found [here](http://www.burns-stat.com/documents/books/tao-te-programming/table-of-contents/).
+- `ttp_edges` - a tibble with data about chapter connections. It has the following columns:
+    - `chapter1` for the chapter number at which list of connections is printed.
+    - `chapter2` for the number of connected chapter.
+    - `type` for connection type (either "ally" or "opponent").
+    
+    __Note__ that connections between chapters are not symmetrical, i.e. one chapter can be an "ally" or "opponent" of the another but not the other way around.
+
+```{r raw-graph-creation}
+ttp_raw <- tbl_graph(nodes = ttp_chapters, edges = ttp_edges, directed = TRUE)
+ttp_raw
+```
+
+The main data structure of `tidygraph` is a `tbl_graph` which can be thought of as a combination of tibbles with data for nodes and edges. __Note__ that values in `from` and `to` columns in edges tibble are the row indices of the nodes stored in nodes tibble, which will be a little confusing when nodes won't cover all chapters.
+
+```{r raw-graph-creation_data, include = FALSE}
+loop_data <- ttp_raw %>%
+  activate(edges) %>%
+  filter(edge_is_loop()) %>%
+  as_tibble()
+
+loop_chapters <- ttp_raw %>%
+  as_tibble(active = "nodes") %>%
+  slice(loop_data$from) %>%
+  pull(name)
+```
+
+Important features of this graph:
+
+- There are `r nrow(loop_data)` loops in graph (chapters `r collapse(loop_chapters)`). And all of them are of type "opponent", which I consider to be a subtle joke rather than editor mistake. However, for exploration these edges will be removed.
+- There are `r components(ttp_raw)$no` [weak] components in this graph (maximal groups of nodes where each pair can be connected by undirected path). The number is this big because there are many chapters with no "allies" and no "opponents" (isolated points in graph), which will be also removed for exploration.
+
+So the graph of interest is constructed as follows:
+
+```{r graph-creation}
+ttp <- ttp_raw %>%
+  # Remove loops
+  activate(edges) %>%
+  filter(!edge_is_loop()) %>%
+  # Remove isolated nodes
+  activate(nodes) %>%
+  filter(!node_is_isolated())
+ttp
+```
+
+Some explanations of the magic just happened:
+
+- `activate()` verb from `tidygraph` serves as a switch between tibbles for nodes and edges. All [dplyr](http://dplyr.tidyverse.org/) verbs applied to `tbl_graph` object are applied to the active tibble.
+- `edge_is_loop()`, `node_is_isolated()` and `group_components()` are functions of the same essence as `n()` in `dplyr`: they both should be called inside a graph computation functions.
+
+## Visualization
+
+```{r graph-plot, fig.height = 8}
+ttp %>%
+  ggraph(layout = "nicely") +
+    geom_edge_link(
+      aes(colour = type),
+      arrow = arrow(length = unit(1.5, "mm")),
+      start_cap = circle(3, "mm"),
+      end_cap = circle(3, "mm")
+    ) +
+    geom_node_text(aes(label = chapter), size = 5) +
+    scale_edge_colour_manual(values = c(ally = "#22B022",
+                                        opponent = "#A4AAF6")) +
+    theme_graph() +
+    labs(
+      title = '"Tao Te Programming" alliance graph',
+      subtitle = "Nodes represent chapter numbers, edges - connections",
+      caption = "@echasnovski"
+    )
+```
+
+Important notes about creation of this plot:
+
+- `ggraph()` is the equivalent of `ggplot()` in [ggplot2](http://ggplot2.tidyverse.org/) and also returns a `ggplot` object. `ggraph()` takes a `layout` argument for the type of graph arrangement in plot. 
+- `geom_edge_link()` and `geom_node_text()` are very much `ggplot2`-like functions: they create layers of plot (for links and nodes respectively).
+- `theme_graph()` is a pre-installed `ggraph` theme.
+
+## Exploration
+
+Notes about graph structure:
+
+⬛ There are two relatively big components (with 16 and 40 nodes) and 4 small ones (one with 5 nodes and three with 2).
+
+⬛ There are considerably more "ally" connections then "opponent" which can be confirmed by the following code:
+
+```{r edge-type-count}
+ttp_edges %>% count(type)
+```
+
+⬛ The graph itself can be considered as [signed graph](https://en.wikipedia.org/wiki/Signed_graph), i.e. a graph "in which each edge has a positive or negative sign". This type of graphs can be studied for special community detection: nodes within common community should be primarily connected with positive ("ally") edges and between communities - by negative ("opponent") ones.
+
+Interesting problem description and solution are presented in this [paper](http://mrvar.fdv.uni-lj.si/pajek/SignedNetworks/Bled94.pdf). I implemented the variation of the suggested approach, which can be found in my [raw analysis](https://github.com/echasnovski/taoteprog/blob/master/analysis/raw-ttp-analysis.Rmd) on github (or [here](`r blogdown::shortcode(.name = "relref", '\"2018-03-06-tao-of-tidygraph_raw-ttp-analysis.nb.html\"', .type = "html")`) for its html output). Implementation is rather verbose with no very special insight, so I decided to not include it here.
+
+# Central advice
+
+One of the reasons I started this research is to find "central programming advice" based on the "Tao Te Programming". By that I mean a piece of advice as the core wisdom which should be mastered first as other advice "depend" on it.
+
+Perhaps, one of the most popular way to compute the centrality value of graph nodes is [PageRank](https://en.wikipedia.org/wiki/PageRank) algorithm. The core idea is that edges of the graph are treated as possibilities for transition to another node, which current node "sees" as important. PageRank assumes that some traveler starts at random node and constantly moves using "available edges". Sometimes, the process is restarted at the new (randomly picked) starting node and transition continues. The __PageRank score of the node__ is the probability of finding a traveler in a particular node at random time in the future: the more this value the more important this node.
+
+This approach needs some correction to be applied to our alliance graph because present edges are not all the same. "Ally" edges can be considered as normal edges in the described framework but what should we do with "opponent" edges? We will go by the following logic: if "ally" edge makes more important node __to which__ it is headed, then "opponent" edge should make more important node __from which__ it is headed. This can be accomplished by introducing "peaceful" variation of alliance graph: all "opponent" edges are reversed and tagged as "ally". This way starting node of [previously] "opponent" edge will receive more possibilities for traveler to appear in it.
+
+Using "peaceful" alliance graph, __constructed from all chapters and edges__ (for more proximity to raw data), we can determine nodes with the highest PageRank scores with the following code:
+
+```{r centrality}
+edges_peace <- ttp_edges %>%
+  transmute(
+    from = if_else(type == "ally", chapter1, chapter2),
+    to = if_else(type == "ally", chapter2, chapter1)
+  )
+
+tbl_graph(
+  nodes = ttp_chapters, edges = edges_peace, directed = TRUE
+) %>%
+  activate(nodes) %>%
+  mutate(centr = centrality_pagerank()) %>%
+  as_tibble() %>%
+  arrange(desc(centr))
+```
+
+The most important advice is from chapter 63 "Dance the Debug 2-Step". This is a rather long chapter which contains many peaces of mini-advice about debugging process. My personal favorite:
+
+- __The Debug 2-step__ is 1) DON'T PANIC!! and 2) Figure out what's wrong. Not very easy steps.
+- The fastest way to debug is to __not have bugs that are hard to find__.
+- One of the best ways to track down a bug is to __continuously simplify the problem__.
+- Simplification should be __driven by hypotheses you make__. The cycle is: 1) create a hypothesis, 2) test the hypothesis.
+- A bug means there is at least one assumption that is being violated. You are really __looking for false assumptions__.
+- __The harder a bug is to find, the sillier the cause__.
+- Once you find the problem, __create at least one test__ to include in your test suite that exhibits the bug.
+
+# Conclusions
+
+- The book ["Tao Te Programming"](http://www.burns-stat.com/documents/books/tao-te-programming/) by [Patrick Burns](http://www.burns-stat.com) is an amazing source of wisdom.
+- Packages [tidygraph](https://github.com/thomasp85/tidygraph) and [ggraph](https://github.com/thomasp85/ggraph) by [Thomas Lin Pedersen](https://www.data-imaginist.com/) offer consistent "tidy" tools for network analysis.
+- __To learn to program one should learn to debug__.
+
+`r blogdown::shortcode("spoiler", id = '\"sessionInfo\"', title = '\"sessionInfo()\"')`
+
+```{r sessionInfo, eval = TRUE}
+sessionInfo()
+```
+
+`r blogdown::shortcode("/spoiler")`
