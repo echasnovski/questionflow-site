@@ -9,7 +9,7 @@ tags:
   - rstats
   - tidygraph
   - ggraph
-description: 'Analysis of "Tao Te Programming" alliance graph within tidy network analysis framework.'
+description: "Analysis of 'Tao Te Programming' alliance graph within tidy network analysis framework."
 ---
 
 ```{r setup, include = FALSE}
