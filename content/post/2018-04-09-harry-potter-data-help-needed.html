@@ -1,0 +1,270 @@
+---
+title: 'Struggle with Harry Potter Data'
+author: Evgeni Chasnovski
+date: '2018-04-09'
+publishDate: '2018-04-09'
+slug: struggle-with-harry-potter-data
+categories: []
+tags:
+  - rstats
+  - javascript
+description: 'Notes about creation of Harry Potter Books Survey. It is not over, I need your help.'
+---
+
+
+
+<div id="prologue" class="section level1">
+<h1>Prologue</h1>
+<p>Right now I am in the final stage of developing two packages devoted to results of abstract competitions (still not perfectly ready, so use with caution):</p>
+<ul>
+<li><a href="https://github.com/echasnovski/comperes">comperes</a> - infrastructure package for dealing with different formats of competition results and summarising them.</li>
+<li><a href="https://github.com/echasnovski/comperank">comperank</a> - package which implements some rating and ranking algorithms. Inspired and driven by insightful book <a href="https://www.amazon.com/Whos-1-Science-Rating-Ranking/dp/069116231X">Who’s #1?: The Science of Rating and Ranking</a> by Amy N. Langville and Carl D. Meyer.</li>
+</ul>
+<p>Understanding of <strong>competition</strong> is quite general: it is a set of <strong>games</strong> (abstract event) in which <strong>players</strong> (abstract entity) gain some abstract <strong>scores</strong> (typically numeric).</p>
+<p>Both packages use example data set called <code>ncaa2005</code> which is results of an isolated group of Atlantic Coast Conference teams provided in “Who’s #1”. In order to demonstrate abstract nature of term “competition” I decided to find another data set, not from the world of sports. I thought it would be easy…</p>
+</div>
+<div id="overview" class="section level1">
+<h1>Overview</h1>
+<p>This post describes my struggle with and process of creating Harry Potter Data with results of “competition” between seven original Harry Potter books. Long story short, I didn’t find suitable existing data and decided to make my own survey. The struggle hasn’t ended yet and I need your help. <strong>Please, take part in the survey at this <a href="https://goo.gl/siBtSy">link</a></strong>. It is a fairly standard <a href="https://www.google.com/intl/en/forms/about/">Google Form</a> with two questions: first one simulates picking random subset of books (read about that later); second offers rating choices. And that’s it. Please, note the following:</p>
+<ul>
+<li><em>It is assumed that you’ve read all seven original J. K. Rowling Harry Potter books and are willing to give an honest feedback about your impressions</em>.</li>
+<li><em>In order to answer you have to sign in your Google account</em>. This is done to ensure that one person participates in the survey only once. Your personal data won’t become public because I will not track it.</li>
+</ul>
+<p>This post has the following structure:</p>
+<ul>
+<li><strong>Decision about the source</strong> describes how I ended up with conducting my own survey.</li>
+<li><strong>Survey design</strong> has my thoughts about how I approached creating the survey.</li>
+<li><strong>Implementation</strong> describes technical details about creating a survey using Google Forms and JavaScript.</li>
+</ul>
+</div>
+<div id="decision-about-the-source" class="section level1">
+<h1>Decision about the source</h1>
+<p>After all sorts of games, the process of people rating common items is, probably, the most common example of competition. Here items can be considered as “players”. “Game” is a person that reviews a set of items by rating them with numerical “score” (stars, points, etc.). To produce this data set I need data in the following format (called “long” in terminology of aforementioned packages):</p>
+<ul>
+<li><strong>Person identifier</strong> (anonymized). It will serve as game identifier.</li>
+<li><strong>Item identifier</strong> which this person rated.</li>
+<li><strong>Numeric score</strong> of item’s rating by person.</li>
+</ul>
+<p>One person can rate multiple items but only once, to avoid bias in the output.</p>
+<p>After some thought I picked seven original J.K. Rowling “Harry Potter” books as items. Besides being interesting and popular books, I figured that it won’t be hard to find a data set with information I need. It wasn’t quite right because all available data sets don’t seem to have suitable license:</p>
+<ul>
+<li>There are rating on Amazon but I didn’t find an easy way to even get the data.</li>
+<li>My second candidate, <a href="https://www.goodreads.com/">Goodreads</a> site, has an API which provides data exactly I need. However, their <a href="https://www.goodreads.com/api/terms">Developer Terms of Service</a> doesn’t look “R package with MIT license” friendly.</li>
+<li>There is also Kaggle’s <a href="https://www.kaggle.com/zygmunt/goodbooks-10k">goodbooks-10k</a> data set. This comes as close to my needs as I could find. Nevertheless, it is still Goodreads data, so I am not sure about it.</li>
+</ul>
+<p>All this led me to conducting my own survey. The good news is that this way I am the full owner of the data set with no license issues. The bad news - I should conduct the survey…</p>
+</div>
+<div id="survey-design" class="section level1">
+<h1>Survey design</h1>
+<p>The freedom in creating your own survey is overwhelming. Basically, you can do whatever you like and can wish to obtain any data you want. In grim reality, there are a couple of things to consider:</p>
+<ul>
+<li><strong>Survey should collect data that will actually help to fulfill its goals</strong>. It should be designed in a way that minimizes the chance of misinterpretation by respondents.</li>
+<li><strong>Survey should be implemented and conducted in the form that is accessible to people as much as possible</strong>. This is needed to collect more data with less efforts.</li>
+</ul>
+<p>The goal of my Harry Potter Survey can be formulated as follows: <em>collect data enough to rank Harry Potter books from worst to best</em>. The most common way to do that is to mimic rating process from various online marketplaces. In more scientific language it means to <em>ask a question using <a href="https://en.wikipedia.org/wiki/Likert_scale">Likert scale</a></em>. That is, an answer to some question should be chosen from some ordinal scale. Very helpful advice can be found in this <a href="https://www.surveymonkey.com/mp/likert-scale/">SurveyMonkey article</a>. The most common Likert scales can be found <a href="http://www.marquette.edu/dsa/assessment/documents/Sample-Likert-Scales.pdf">here</a>.</p>
+<p>Unfortunately, I decided to read about how to conduct survey not in the beginning of constructing my own. Its core is a question that asks to associate Harry Potter Books with some numerical ratings. Evolution of this question was as follows:</p>
+<ul>
+<li><strong>Stage 1</strong>.
+<ul>
+<li><em>Question</em>: ‘Rate these BOOKS (not movies) from 1 (“very poor book”) to 7 (“exceptional book”)’. As you can see, this isn’t actually a question because at first I planned to give a <em>task</em>. Also I was trying to highly indicate that the books are of interest and not movies.</li>
+<li><em>Scale</em>: numeric, from 1 to 7. This seemed logical as numeric scores will be actually used in analysis.</li>
+</ul></li>
+<li><strong>Stage 2</strong>. After reading SurveyMonkey article and other sources, drastic transformation was made. I decided to actually ask a question about satisfaction after reading the book. This makes it a personal and, for my opinion, clear question.
+<ul>
+<li><em>Question</em>: ‘How did you like these BOOKS?’. One thing to consider here is whether it is better to use past or present tense. At this stage I decided to go with past tense because [in my opinion] it questions a fixed moment in time “just after reading a book”. Unfortunately, it wasn’t the case.</li>
+<li><em>Scale</em>: combined, from 1 to 5. It is fairly standard bipolar “Satisfaction” scale: “1 - Very dissatisfied”; “2 - Dissatisfied”; “3 - Neutral”; “4 - Satisfied”; “5 - Very satisfied”. I decided to move to 5 point scale as it is more common and should provide more reliable data. Its downside is smaller <a href="https://www.surveymonkey.com/curiosity/methodology-variance/">variance</a>. I also preserved numbers for extra indication of implied linear scale.</li>
+</ul></li>
+<li><strong>Stage 3</strong>. After some thought and practical testing I decided not to invent the wheel and stick with more common “Quality” scale. This has an advantage of being more or less standard, which should provide more robust data.
+<ul>
+<li><em>Question</em>: ‘What is your impression of these Harry Potter BOOKS?’. Added explicit indication about Harry Potter to be able to shorten books’ names. Changed to present tense because I had mixed feedback about previous question and which moment in the past it referred to. Of course, I can add explicit reference but it might overcomplicate the question. Also, question in present tense should be easier to answer.</li>
+<li><em>Scale</em>: combined, from 1 to 5. It is fairly standard unipolar “Quality” scale: “1 - Poor”, “2 - Fair”, “3 - Good”, “4 - Very Good”, “5 - Excellent”.</li>
+</ul></li>
+</ul>
+<p>After designing the basic question, there are couple of other things to consider:</p>
+<ul>
+<li><strong>Item names should be understandable</strong>. With seven Harry Potter books it might be confusing if they are presented only by title. So I decided to add book’s number in the series after its title. Also, explicit indication of “Harry Potter” in the title seems overcomplicating a survey, as it doesn’t add extra necessary information, so I decided to shorten it to “HP”. The resulting books are named “HP and the Philosopher’s (Sorcerer’s) Stone (#1)”, “HP and the Chamber of Secrets (#2)”, “HP and the Prisoner of Azkaban (#3)”, “HP and the Goblet of Fire (#4)”, “HP and the Order of the Phoenix (#5)”, “HP and the Half-Blood Prince (#6)”, “HP and the Deathly Hallows (#7)”.</li>
+<li><strong>Actual set of items can affect the outcome</strong>. For example, if person’s favourite book is present in the list, he/she might anchor his/her other ratings to this book. This can be solved by randomizing set of books asked to rate.</li>
+<li><strong>Actual order of items can affect the outcome</strong>. The reasoning is similar to previous note. This can be solved by randomizing the order of books presented.</li>
+</ul>
+<p>So here is the final design of a survey. Respondent is asked a question “What is your impression of these Harry Potter BOOKS?” and presented with random subset (in random order) of names of seven Harry Potter books (presented above) which should be rated on pretty standard Likert “Quality” scale (with present numeric scores).</p>
+<p>About the desired number of respondents I think that hitting 100 will produce fairly usable output data set. But the more the better.</p>
+<p>After exhausting process of survey design I hoped that implementation should be easy. I again wasn’t quite right…</p>
+</div>
+<div id="implementation" class="section level1">
+<h1>Implementation</h1>
+<p>The main obstacle in implementing the intended survey is randomization of presented items. Also I had to keep in mind that answering process should be as easy as possible and that one person should be able to answer only once.</p>
+<p>After some Internet surfing, it seemed that the most optimal way of conducting a survey is with Google Forms. It can provide an option to participate in survey only once with a downside: one should have and be logged into a Google account. It can possibly scare off potential respondents. However, Google Forms has an option to not track user data, which I gladly used. It also has a feature to randomly shuffle the order of the items used in question, which is very helpful.</p>
+<p>The biggest trouble with Google Forms is that it can’t randomly generate questions. I decided to work around this problem the following way:</p>
+<ul>
+<li>Create many variants of question for all possible subsets of books. There are total of 127 non-empty subsets for 7 books. Items in every question should be shuffled.</li>
+<li>Create dummy question (to be put first) which has a list of numbers - pointers to subsets of books. This list will be randomly shuffled for every respondent. Picking the first item from the list simulates generating random subset of books.</li>
+</ul>
+<p>All this can be done manually. And I’ve actually done that… However, after deciding to change the question and scale (move from “Stage 1” to “Stage 2” in question evolution), I realized that it would be better to program Form creation. As it turns out, this can be done with <a href="https://developers.google.com/apps-script/">Google Apps Script</a> which accepts JavaScript code. After learning language basics and with great support of Internet, I came up with this solution:</p>
+<pre class="js"><code>// Function to generate all non-empty subsets of array
+function generatePowerSet(array) {
+  var result = [];
+  
+  for (var i = 1; i &lt; (1 &lt;&lt; array.length); i++) {
+    var subset = [];
+    for (var j = 0; j &lt; array.length; j++)
+      if (i &amp; (1 &lt;&lt; j))
+      subset.push(array[j]);
+    
+    result.push(subset);
+  }
+  
+  return result;
+}
+
+// Function to create target survey
+function createHPSurvey() {
+  var form = FormApp.create(&#39;Harry Potter Books Survey&#39;)
+                    .setAllowResponseEdits(false)
+                    .setCollectEmail(false)
+                    .setLimitOneResponsePerUser(true);
+   
+  // Add select list
+  var selectList = form.addListItem()
+                       .setTitle(&#39;Choose first listed number&#39;)
+                       .setHelpText(&#39;This simulates random subsetting of books.&#39;)
+                       .setRequired(true);
+  
+  // Initialize main questions data
+  var questionSingular = &#39;What is your impression of this Harry Potter BOOK?&#39;;
+  var questionPlural   = &#39;What is your impression of these Harry Potter BOOKS?&#39;;
+  var likertScale = [&#39;1 - Poor&#39;, &#39;2 - Fair&#39;, &#39;3 - Good&#39;,
+                     &#39;4 - Very Good&#39;, &#39;5 - Excellent&#39;];
+  
+  var books = [&quot;HP and the Philosopher&#39;s (Sorcerer&#39;s) Stone (#1)&quot;,
+               &quot;HP and the Chamber of Secrets (#2)&quot;,
+               &quot;HP and the Prisoner of Azkaban (#3)&quot;,
+               &quot;HP and the Goblet of Fire (#4)&quot;,
+               &quot;HP and the Order of the Phoenix (#5)&quot;,
+               &quot;HP and the Half-Blood Prince (#6)&quot;,
+               &quot;HP and the Deathly Hallows (#7)&quot;];
+  
+  var allSubsets = generatePowerSet(books);
+  
+  // Create pages with all subsets
+  var pages = []; // for collecting the choices in the list item
+  for (var n = 0; n &lt; allSubsets.length; n++) {
+    
+    // Make a section for current subset
+    var newPage = form.addPageBreakItem()
+                      .setTitle(&#39;Rate books&#39;);
+    
+    // Set the section to submit after completing (rather than next subset section)
+    newPage.setGoToPage(FormApp.PageNavigationType.SUBMIT)
+    
+    // Add question for current subset with scale
+    var question = form.addGridItem()
+                       .setRows(allSubsets[n])
+                       .setColumns(likertScale)
+                       .setRequired(true);
+    if (allSubsets[n].length == 1) {
+      question.setTitle(questionSingular);
+    } else {
+      question.setTitle(questionPlural);
+    }
+    
+    // Push our choice to the list select
+    pages.push(selectList.createChoice(n + 1, newPage));
+  }
+  
+  // Add all subsets to select list 
+  selectList.setChoices(pages);
+}</code></pre>
+<script type="text/javascript">
+// Function to generate all non-empty subsets of array
+function generatePowerSet(array) {
+  var result = [];
+  
+  for (var i = 1; i < (1 << array.length); i++) {
+    var subset = [];
+    for (var j = 0; j < array.length; j++)
+      if (i & (1 << j))
+      subset.push(array[j]);
+    
+    result.push(subset);
+  }
+  
+  return result;
+}
+
+// Function to create target survey
+function createHPSurvey() {
+  var form = FormApp.create('Harry Potter Books Survey')
+                    .setAllowResponseEdits(false)
+                    .setCollectEmail(false)
+                    .setLimitOneResponsePerUser(true);
+   
+  // Add select list
+  var selectList = form.addListItem()
+                       .setTitle('Choose first listed number')
+                       .setHelpText('This simulates random subsetting of books.')
+                       .setRequired(true);
+  
+  // Initialize main questions data
+  var questionSingular = 'What is your impression of this Harry Potter BOOK?';
+  var questionPlural   = 'What is your impression of these Harry Potter BOOKS?';
+  var likertScale = ['1 - Poor', '2 - Fair', '3 - Good',
+                     '4 - Very Good', '5 - Excellent'];
+  
+  var books = ["HP and the Philosopher's (Sorcerer's) Stone (#1)",
+               "HP and the Chamber of Secrets (#2)",
+               "HP and the Prisoner of Azkaban (#3)",
+               "HP and the Goblet of Fire (#4)",
+               "HP and the Order of the Phoenix (#5)",
+               "HP and the Half-Blood Prince (#6)",
+               "HP and the Deathly Hallows (#7)"];
+  
+  var allSubsets = generatePowerSet(books);
+  
+  // Create pages with all subsets
+  var pages = []; // for collecting the choices in the list item
+  for (var n = 0; n < allSubsets.length; n++) {
+    
+    // Make a section for current subset
+    var newPage = form.addPageBreakItem()
+                      .setTitle('Rate books');
+    
+    // Set the section to submit after completing (rather than next subset section)
+    newPage.setGoToPage(FormApp.PageNavigationType.SUBMIT)
+    
+    // Add question for current subset with scale
+    var question = form.addGridItem()
+                       .setRows(allSubsets[n])
+                       .setColumns(likertScale)
+                       .setRequired(true);
+    if (allSubsets[n].length == 1) {
+      question.setTitle(questionSingular);
+    } else {
+      question.setTitle(questionPlural);
+    }
+    
+    // Push our choice to the list select
+    pages.push(selectList.createChoice(n + 1, newPage));
+  }
+  
+  // Add all subsets to select list 
+  selectList.setChoices(pages);
+}
+</script>
+<p>This code should be run into Google Apps Script project. It creates a Google Form named “Harry Potter Books Survey” and stores it on Google Drive.</p>
+<p>Unfortunately, I didn’t find option of adding shuffling programmatically for every question, so I did it manually… one by one. I thought for a while about creating questions not only for every subset but also for its every permutation. This doesn’t really the same way of randomizing because questions with more permutations will be chosen more frequently at the first step.</p>
+<p>Very helpful sources I used to implement this:</p>
+<ul>
+<li><a href="https://mashe.hawksey.info/2018/03/creating-custom-branching-in-google-forms-with-google-apps-script/">Basic code for “branching” form</a></li>
+<li><a href="https://developers.google.com/apps-script/reference/forms/">Official Google Apps Script Reference for Forms</a></li>
+<li><a href="https://stackoverflow.com/a/42774138/7360839">Generating all subsets in JavaScript</a> (modified to not include empty subset)</li>
+</ul>
+</div>
+<div id="conclusions" class="section level1">
+<h1>Conclusions</h1>
+<ul>
+<li>Creating your own data set is hard. But very rewarding.</li>
+<li>Designing a survey is hard. But very insightful.</li>
+<li>Implementing a dynamic survey in Google Forms is hard. But very JavaScript.</li>
+<li>I still need your help. <strong>Please, take part in the survey at this <a href="https://goo.gl/siBtSy">link</a></strong>.</li>
+</ul>
+</div>
