@@ -1,0 +1,366 @@
+---
+title: Harry Potter and competition results with comperes
+author: Evgeni Chasnovski
+date: '2018-05-09'
+publishDate: '2018-05-09'
+slug: harry-potter-and-competition-results-with-comperes
+categories: []
+tags:
+  - rstats
+  - comperes
+description: 'Exploration of Harry Potter Books Survey results with help of my new comperes package.'
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  eval = TRUE,
+  collapse = TRUE,
+  fig.width = 9
+)
+options(tibble.print_min = 5, tibble.print_max = 10)
+
+n_resp <- length(unique(comperes::hp_survey$person))
+max_game_players <- max(table(comperes::hp_survey$person))
+```
+
+# Prologue
+
+About a month ago I decided to add interesting data set to my almost finished (hopefully, soon to be on CRAN) [comperes](https://github.com/echasnovski/comperes) package. Data should represent results of some not ordinary competition. After some thought I picked a "competition" between Harry Potter books with a goal eventually to rate them from worst to best. After a series of events I ended up creating data myself. You can read more about that in my [previous post](`r blogdown::shortcode(.name = "relref", '\"2018-04-09-struggle-with-harry-potter-data.html\"', .type = "html")`).
+
+Post and survey in general were popularized mostly among R users with [R-bloggers](https://www.r-bloggers.com/) (which gave me ~53 respondents), [Twitter](https://twitter.com/) (which added the rest) and [Reddit](https://www.reddit.com/r/rstats/) (which added ~0 people as post was deleted soon after publication). Survey managed to attract `r n_resp` respondents. I want to greatly thank all people who took their time to take part in and spread a word about my survey. Special thanks goes to [Mara Averick](https://twitter.com/dataandme) who started a Twitter wave.
+
+This post has two goals:
+
+- Present and explore results of the survey.
+- Demonstrate basic functionality of `comperes` package. To learn more go to its [README](https://github.com/echasnovski/comperes#comperes) and vignettes.
+
+# Overview
+
+Survey results can be obtained by installing development version of `comperes` package from GitHub. They are present as package data named `hp_survey`.
+
+This post will cover the following topics:
+
+- __Exploration__ of survey results (most important being __Book scores__ section).
+- Description of `comperes` __competition results__ formats with conversion `hp_survey` to one of them.
+- __Head-to-Head__ "performance" of books against each other.
+
+We will need the following setup:
+
+```{r library, message = FALSE}
+library(dplyr)
+library(tidyr)
+library(rlang)
+library(stringr)
+library(ggplot2)
+library(comperes)
+
+set.seed(201805)
+
+theme_set(theme_bw())
+
+# Authenticity palette
+hp_pal <- c(Gryff = "#D02037", Huffl = "#F0C346",
+            Raven = "#2450A8", Raven_light = "#0088FF",
+            Slyth = "#09774A")
+
+# For less noisy bar charts
+theme_bar <- function() {
+  list(theme(panel.grid.major.x = element_blank(),
+             panel.grid.minor.x = element_blank()))
+}
+```
+
+# Exploration
+
+## Data preparation
+
+`hp_suvery` is a [tibble](http://tibble.tidyverse.org/) (enhanced data frame) and has the following columns:
+
+- __person__ \<int\> : Identifier of a person.
+- __book__ \<chr\> : Identifier of a Harry Potter book. Its values are of the form "HP_x" where "x" represents book's number in the series (from 1 to 7).
+- __score__ \<chr\> : Book's score. Can be one of "1 - Poor", "2 - Fair", "3 - Good", "4 - Very Good", "5 - Excellent".
+
+_For exploration_, let's transform `hp_survey` for more expressive code and results:
+
+- Convert scores to numerical.
+- Add book names.
+
+```{r hp}
+book_names <- c(
+    "Philosopher's (Sorcerer's) Stone (#1)",
+    "Chamber of Secrets (#2)",
+    "Prisoner of Azkaban (#3)",
+    "Goblet of Fire (#4)",
+    "Order of the Phoenix (#5)",
+    "Half-Blood Prince (#6)",
+    "Deathly Hallows (#7)"
+  )
+book_name_tbl <- tibble(
+  book = paste0("HP_", 1:7),
+  book_name = factor(book_names, levels = book_names)
+)
+
+hp <- hp_survey %>%
+  # Extract numerical score
+  rename(score_chr = score) %>%
+  mutate(score = as.integer(gsub("[^0-9].*$", "", score_chr))) %>%
+  # Add book names
+  left_join(y = book_name_tbl, by = "book")
+
+hp
+```
+
+## Subset uniformity
+
+The first step in the survey was to choose the first element in the randomly shuffled list to simulate generation of random subset from all books. Each of 127 list element was connected to one subset. Lets visualize subset frequency to ensure a good faith of respondents:
+
+```{r subset-frequency}
+# Compute subset representations
+hp_subsets <- hp %>%
+  arrange(person, book) %>%
+  group_by(person) %>%
+  summarise(subset = paste0(book, collapse = "-"))
+
+# Compute the number of actually picked subsets
+n_distinct(hp_subsets$subset)
+
+# Visualize
+hp_subsets %>%
+  ggplot(aes(subset)) +
+    geom_bar(fill = hp_pal["Gryff"]) +
+    labs(
+      x = "Subset", y = "Number of times subset was picked",
+      title = "Picked subsets have fairly uniform distribution"
+    ) +
+    scale_x_discrete(labels = NULL) +
+    theme_bar() +
+    theme(axis.ticks.x = element_blank())
+```
+
+So there are `r n_distinct(hp_subsets$subset)` subsets actually picked and their distribution seems reasonably uniform. This is enough for me to confirm that randomization for subsets was successful.
+
+## Book presence
+
+Other important thing to explore is number of times book was actually rated:
+
+```{r book-frequency}
+hp %>%
+  ggplot(aes(book_name)) +
+    geom_bar(fill = hp_pal["Huffl"]) +
+    # Cool way to wrap labels for a given width
+    scale_x_discrete(labels = function(x) str_wrap(x, width = 15)) +
+    labs(
+      x = "", y = "Number of present scores",
+      title = "Some books were rated more times than others",
+      subtitle = "But it seems fine"
+    ) +
+    theme_bar()
+```
+
+## Book scores
+
+The most obvious way to summarise book "performance" is its mean score of numerical representation of scale. Using mean is not harmful in this study as no outlier can be present.
+
+```{r book-score_summary}
+hp_book_score <- hp %>%
+  group_by(book_name) %>%
+  summarise(mean_score = round(mean(score), digits = 2)) %>%
+  arrange(desc(mean_score))
+
+hp_book_score
+```
+
+__So, "the best" book seems to be "Harry Potter and the Prisoner of Azkaban (#3)"__.
+
+For more understanding of results, lets also visualize score distribution.
+
+```{r book-score_distribution, fig.height = 8}
+hp %>%
+  # Compute share of score per book
+  count(book_name, score) %>%
+  group_by(book_name) %>%
+  mutate(share = n / sum(n)) %>%
+  ungroup() %>%
+  # Visualize
+  ggplot() +
+    geom_col(
+      aes(score, share, colour = score, fill = score),
+      show.legend = FALSE
+    ) +
+    geom_text(
+      data = hp_book_score,
+      mapping = aes(label = paste0("Mean = ", mean_score)),
+      x = -Inf, y = Inf,
+      hjust = -0.05, vjust = 1.3
+    ) +
+    facet_wrap(~ book_name) +
+    scale_x_continuous(
+      breaks = 1:5,
+      labels = c("1\nPoor", "2\nFair", "3\nGood",
+                 "4\nVery\nGood", "5\nExcellent")
+    ) +
+    scale_fill_gradient(low = hp_pal["Raven"], high = hp_pal["Raven_light"]) +
+    scale_colour_gradient(low = hp_pal["Raven"], high = hp_pal["Raven_light"]) +
+    labs(
+      x = "", y = "Score share per book",
+      title = '"Prisoner of Azkaban (#3)" seems to be "the best" HP book',
+      caption = "@echasnovski"
+    ) +
+    theme_bar()
+```
+
+# Competition results
+
+## Formats of comperes
+
+Understanding of __competition__ is quite general: it is a set of __games__ (abstract event) in which __players__ (abstract entity) gain some abstract __scores__ (typically numeric). Inside games all players are treated equally. The most natural example is sport results, however not the only one. For example, product rating can be considered as a competition between products as "players". Here a "game" is a customer that reviews a set of products by rating them with numerical "score" (stars, points, etc.).
+
+In case of Harry Potter Books Survey results "game" is an act of respondent taking part in survey, "player" - Harry Potter book, "score" - discrete scale values converted to numerical score from 1 to 5.
+
+In `comperes` there are two supported formats of competition results:
+
+- __Long format__. It is the most abstract way of presenting competition results. Basically, it is a data frame (or tibble) with columns `game` (game identifier), `player` (player identifier) and `score` where _each row represents the score of particular player in particular game_. One game can consist from __variable__ number of players which makes this format more usable. Extra columns are allowed.
+- __Wide format__ is a more convenient way to store results with __fixed__ number of players in a game. _Each row represents scores of all players in particular game_. Data should be organized in pairs of columns "player"-"score". Identifier of a pair should go after respective keyword and consist only from digits. For example: `player1`, `score1`, `player2`, `score2`. Order doesn't matter. Column `game` is optional. Extra columns are also allowed.
+
+Programmatically these formats are implemented as S3 classes `longcr` and `widecr` respectively. Essentially, they are tibbles  with fixed structure. Objects of these classes should be created using functions `as_longcr()` and `as_widecr()` which also do conversions to other format.
+
+## Conversion
+
+`hp_survey` presents results in __long format__.
+
+```{r hp_cr}
+hp_cr <- hp_survey %>%
+  transmute(
+    game = person, player = book,
+    score = as.integer(gsub("[^0-9].*$", "", score))
+  ) %>%
+  as_longcr()
+
+hp_cr
+```
+
+Here is the demonstration of conversion to __wide format__. It detects the maximum number of players in a game, which is `r max_game_players`, and assumes that data is missing in games with less number of players.
+
+```{r hp_cr-widecr}
+as_widecr(hp_cr)
+```
+
+# Head-to-Head
+
+## Functionality of comperes
+
+Head-to-Head value is a __summary statistic of direct confrontation between two players__. It is assumed that this value can be computed based only on the players' matchups (results for ordered pairs of players from one game). In other words, every game is converted into series of "subgames" between ordered pairs of players (including selfplay) which is stored as `widecr` object. After that, summary of item, defined by columns player1 and player2, is computed.
+
+`comperes` has function `get_matchups()` for computing matchups:
+
+```{r hp_cr-matchups}
+get_matchups(hp_cr)
+```
+
+To compute multiple Head-to-Head values, use `h2h_long()` supplying competition results and summarizing expressions in [`dplyr::summarise()`](https://dplyr.tidyverse.org/reference/summarise.html) fashion. They will be applied to a data frame of matchups.
+
+```{r h2h_long}
+hp_cr_h2h <- hp_cr %>% h2h_long(
+  # Number of macthups
+  n = n(),
+  # Number of wins plus half the number of ties
+  # num_wins() is a function from comperes to compute number of times
+  # first score is bigger than second one
+  num_wins = num_wins(score1, score2, half_for_draw = TRUE),
+  # Mean rating of a book scored in matchups with other books
+  mean_score = mean(score1),
+  # Mean rating difference of books scored in direct matchups
+  mean_score_diff = mean(score1 - score2)
+) %>%
+  mutate_if(is.numeric, funs(round(., 2)))
+
+hp_cr_h2h
+```
+
+So here we see, for example, that `r hp_cr_h2h$player1[2]` and `r hp_cr_h2h$player2[2]` had `r hp_cr_h2h$n[2]` matchups, i.e. they were rated by the same person `r hp_cr_h2h$n[2]` times. `HP_1` "won" `r hp_cr_h2h$num_wins[2]` (respecting ties) times, gained mean score of `r hp_cr_h2h$mean_score[2]` in those matchups and had, on average, `r abs(hp_cr_h2h$mean_score_diff[2])` points `r ifelse(hp_cr_h2h$mean_score_diff[2] >= 0, "more", "less")`.
+
+There is also an `h2h_mat()` function which computes a matrix of Head-to-Head values for one expression.
+
+```{r h2h_mat}
+hp_cr %>% h2h_mat(num_wins(score1, score2, half_for_draw = TRUE))
+```
+
+For more convenient usage, `comperes` has a list `h2h_funs` of some common Head-to-Head functions stored as [expressions](http://rlang.r-lib.org/reference/quotation.html). To use them you need a little bit of [rlang](http://rlang.r-lib.org/index.html)'s [unquoting magic](http://rlang.r-lib.org/reference/quasiquotation.html).
+
+```{r h2h_funs}
+h2h_funs[1:3]
+
+hp_cr %>% h2h_long(!!! h2h_funs)
+```
+
+## Harry Potter books
+
+Head-to-Head "performance" of Harry Potter books is summarised in the following plot:
+
+```{r hp_cr_h2h-plot, fig.height = 8}
+hp_cr_h2h %>%
+  gather(h2h_fun, value, -player1, -player2) %>%
+  # Manually produce a dummy colour variable to use in facets
+  group_by(h2h_fun) %>%
+  mutate(col = (value - min(value)) / (max(value) - min(value))) %>%
+  ungroup() %>%
+  # Make factors for correct orders
+  mutate(
+    player1 = factor(player1, levels = rev(sort(unique(player1)))),
+    player2 = factor(player2, levels = sort(unique(player2))),
+    h2h_fun = factor(h2h_fun,
+                     levels = c("n", "num_wins",
+                                "mean_score", "mean_score_diff")),
+    h2h_fun = recode(
+      h2h_fun,
+      n = "Number of matchups (ratings by common person)",
+      num_wins = 'Number of "wins" in matchups (half for ties)',
+      mean_score = "Mean score in matchups",
+      mean_score_diff = "Mean score difference in matchups"
+    )
+  ) %>%
+  # Visualize
+  ggplot(aes(player1, player2)) +
+    geom_text(
+      aes(label = value, colour = col),
+      size = 5, fontface = "bold", show.legend = FALSE
+    ) +
+    facet_wrap(~ h2h_fun, scales = "free") +
+    # To coordinate well with matrix form of Head-to-Head results
+    coord_flip() +
+    scale_colour_gradient(low = hp_pal["Slyth"], high = hp_pal["Gryff"]) +
+    labs(
+      x = "", y = "",
+      title = "Head-to-Head performance of Harry Potter books",
+      subtitle = paste0(
+        '"HP_x" means Harry Potter book number "x" in series\n',
+        "Numbers are Head-to-Head values of book in row against book in column"
+      ),
+      caption = "@echasnovski"
+    ) +
+    theme_classic() +
+    theme(strip.text = element_text(face = "bold"))
+```
+
+There is a lot of information hidden in this plot. The most obvious discoveries:
+
+- It happened that book _"HP_7"_ ("Deathly Hallows") was rated with _"HP_4"_ ("Goblet of Fire") by one person the most: 61 times.
+- _"HP_7"_ scored over _"HP_2"_ ("Chamber of Secrets") the most wins (34, half for ties) as did _"HP_6"_ ("Half-Blood Prince") over "HP_7".
+- Book _"HP_6"_ made the highest mean score of 4.36 in matchups with _"HP_2"_, which is bigger by 0.23 from its overall mean score.
+- In terms of score differences, _"HP_3"_ ("Prisoner of Azkaban") did best in matchups with _"HP_2"_, scoring on average 0.77 points more. This pair also represents "the best" and "the worst" books in terms of mean score.
+
+# Conclusion
+
+- A public call for help in creating data set for R package shouldn't be made on Reddit but rather on R-bloggers or Twitter.
+- Among all original Harry Potter books, "Harry Potter and the Prisoner of Azkaban" seems to be considered "best" among R users. "Harry Potter and the Chamber of Secrets" suffers the opposite fate.
+- Package `comperes` is useful for storing, manipulating and summarising abstract competition results.
+- However informative, manually inspecting competition results with direct summaries and Head-to-Head tables is hard. They can display complex nature of performance relations between players. Next analysis of Harry Potter Books Survey data will be using my package [comperank](https://github.com/echasnovski/comperank) which implements different ranking methods for automatic discovery of player's performance.
+
+`r blogdown::shortcode("spoiler", id = '\"sessionInfo\"', title = '\"sessionInfo()\"')`
+
+```{r sessionInfo, eval = TRUE}
+sessionInfo()
+```
+
+`r blogdown::shortcode("/spoiler")`

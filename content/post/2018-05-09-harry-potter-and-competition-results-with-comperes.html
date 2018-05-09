@@ -1,0 +1,432 @@
+---
+title: Harry Potter and competition results with comperes
+author: Evgeni Chasnovski
+date: '2018-05-09'
+publishDate: '2018-05-09'
+slug: harry-potter-and-competition-results-with-comperes
+categories: []
+tags:
+  - rstats
+  - comperes
+description: 'Exploration of Harry Potter Books Survey results with help of my new comperes package.'
+---
+
+
+
+<div id="prologue" class="section level1">
+<h1>Prologue</h1>
+<p>About a month ago I decided to add interesting data set to my almost finished (hopefully, soon to be on CRAN) <a href="https://github.com/echasnovski/comperes">comperes</a> package. Data should represent results of some not ordinary competition. After some thought I picked a “competition” between Harry Potter books with a goal eventually to rate them from worst to best. After a series of events I ended up creating data myself. You can read more about that in my <a href="{{< relref "2018-04-09-struggle-with-harry-potter-data.html" >}}">previous post</a>.</p>
+<p>Post and survey in general were popularized mostly among R users with <a href="https://www.r-bloggers.com/">R-bloggers</a> (which gave me ~53 respondents), <a href="https://twitter.com/">Twitter</a> (which added the rest) and <a href="https://www.reddit.com/r/rstats/">Reddit</a> (which added ~0 people as post was deleted soon after publication). Survey managed to attract 182 respondents. I want to greatly thank all people who took their time to take part in and spread a word about my survey. Special thanks goes to <a href="https://twitter.com/dataandme">Mara Averick</a> who started a Twitter wave.</p>
+<p>This post has two goals:</p>
+<ul>
+<li>Present and explore results of the survey.</li>
+<li>Demonstrate basic functionality of <code>comperes</code> package. To learn more go to its <a href="https://github.com/echasnovski/comperes#comperes">README</a> and vignettes.</li>
+</ul>
+</div>
+<div id="overview" class="section level1">
+<h1>Overview</h1>
+<p>Survey results can be obtained by installing development version of <code>comperes</code> package from GitHub. They are present as package data named <code>hp_survey</code>.</p>
+<p>This post will cover the following topics:</p>
+<ul>
+<li><strong>Exploration</strong> of survey results (most important being <strong>Book scores</strong> section).</li>
+<li>Description of <code>comperes</code> <strong>competition results</strong> formats with conversion <code>hp_survey</code> to one of them.</li>
+<li><strong>Head-to-Head</strong> “performance” of books against each other.</li>
+</ul>
+<p>We will need the following setup:</p>
+<pre class="r"><code>library(dplyr)
+library(tidyr)
+library(rlang)
+library(stringr)
+library(ggplot2)
+library(comperes)
+
+set.seed(201805)
+
+theme_set(theme_bw())
+
+# Authenticity palette
+hp_pal &lt;- c(Gryff = &quot;#D02037&quot;, Huffl = &quot;#F0C346&quot;,
+            Raven = &quot;#2450A8&quot;, Raven_light = &quot;#0088FF&quot;,
+            Slyth = &quot;#09774A&quot;)
+
+# For less noisy bar charts
+theme_bar &lt;- function() {
+  list(theme(panel.grid.major.x = element_blank(),
+             panel.grid.minor.x = element_blank()))
+}</code></pre>
+</div>
+<div id="exploration" class="section level1">
+<h1>Exploration</h1>
+<div id="data-preparation" class="section level2">
+<h2>Data preparation</h2>
+<p><code>hp_suvery</code> is a <a href="http://tibble.tidyverse.org/">tibble</a> (enhanced data frame) and has the following columns:</p>
+<ul>
+<li><strong>person</strong> &lt;int&gt; : Identifier of a person.</li>
+<li><strong>book</strong> &lt;chr&gt; : Identifier of a Harry Potter book. Its values are of the form “HP_x” where “x” represents book’s number in the series (from 1 to 7).</li>
+<li><strong>score</strong> &lt;chr&gt; : Book’s score. Can be one of “1 - Poor”, “2 - Fair”, “3 - Good”, “4 - Very Good”, “5 - Excellent”.</li>
+</ul>
+<p><em>For exploration</em>, let’s transform <code>hp_survey</code> for more expressive code and results:</p>
+<ul>
+<li>Convert scores to numerical.</li>
+<li>Add book names.</li>
+</ul>
+<pre class="r"><code>book_names &lt;- c(
+    &quot;Philosopher&#39;s (Sorcerer&#39;s) Stone (#1)&quot;,
+    &quot;Chamber of Secrets (#2)&quot;,
+    &quot;Prisoner of Azkaban (#3)&quot;,
+    &quot;Goblet of Fire (#4)&quot;,
+    &quot;Order of the Phoenix (#5)&quot;,
+    &quot;Half-Blood Prince (#6)&quot;,
+    &quot;Deathly Hallows (#7)&quot;
+  )
+book_name_tbl &lt;- tibble(
+  book = paste0(&quot;HP_&quot;, 1:7),
+  book_name = factor(book_names, levels = book_names)
+)
+
+hp &lt;- hp_survey %&gt;%
+  # Extract numerical score
+  rename(score_chr = score) %&gt;%
+  mutate(score = as.integer(gsub(&quot;[^0-9].*$&quot;, &quot;&quot;, score_chr))) %&gt;%
+  # Add book names
+  left_join(y = book_name_tbl, by = &quot;book&quot;)
+
+hp
+## # A tibble: 657 x 5
+##   person book  score_chr     score book_name                            
+##    &lt;int&gt; &lt;chr&gt; &lt;chr&gt;         &lt;int&gt; &lt;fct&gt;                                
+## 1      1 HP_6  5 - Excellent     5 Half-Blood Prince (#6)               
+## 2      1 HP_7  5 - Excellent     5 Deathly Hallows (#7)                 
+## 3      2 HP_1  3 - Good          3 Philosopher&#39;s (Sorcerer&#39;s) Stone (#1)
+## 4      2 HP_4  5 - Excellent     5 Goblet of Fire (#4)                  
+## 5      2 HP_5  2 - Fair          2 Order of the Phoenix (#5)            
+## # ... with 652 more rows</code></pre>
+</div>
+<div id="subset-uniformity" class="section level2">
+<h2>Subset uniformity</h2>
+<p>The first step in the survey was to choose the first element in the randomly shuffled list to simulate generation of random subset from all books. Each of 127 list element was connected to one subset. Lets visualize subset frequency to ensure a good faith of respondents:</p>
+<pre class="r"><code># Compute subset representations
+hp_subsets &lt;- hp %&gt;%
+  arrange(person, book) %&gt;%
+  group_by(person) %&gt;%
+  summarise(subset = paste0(book, collapse = &quot;-&quot;))
+
+# Compute the number of actually picked subsets
+n_distinct(hp_subsets$subset)
+## [1] 95
+
+# Visualize
+hp_subsets %&gt;%
+  ggplot(aes(subset)) +
+    geom_bar(fill = hp_pal[&quot;Gryff&quot;]) +
+    labs(
+      x = &quot;Subset&quot;, y = &quot;Number of times subset was picked&quot;,
+      title = &quot;Picked subsets have fairly uniform distribution&quot;
+    ) +
+    scale_x_discrete(labels = NULL) +
+    theme_bar() +
+    theme(axis.ticks.x = element_blank())</code></pre>
+<p><img src="/post/2018-05-09-harry-potter-and-competition-results-with-comperes_files/figure-html/subset-frequency-1.png" width="864" /></p>
+<p>So there are 95 subsets actually picked and their distribution seems reasonably uniform. This is enough for me to confirm that randomization for subsets was successful.</p>
+</div>
+<div id="book-presence" class="section level2">
+<h2>Book presence</h2>
+<p>Other important thing to explore is number of times book was actually rated:</p>
+<pre class="r"><code>hp %&gt;%
+  ggplot(aes(book_name)) +
+    geom_bar(fill = hp_pal[&quot;Huffl&quot;]) +
+    # Cool way to wrap labels for a given width
+    scale_x_discrete(labels = function(x) str_wrap(x, width = 15)) +
+    labs(
+      x = &quot;&quot;, y = &quot;Number of present scores&quot;,
+      title = &quot;Some books were rated more times than others&quot;,
+      subtitle = &quot;But it seems fine&quot;
+    ) +
+    theme_bar()</code></pre>
+<p><img src="/post/2018-05-09-harry-potter-and-competition-results-with-comperes_files/figure-html/book-frequency-1.png" width="864" /></p>
+</div>
+<div id="book-scores" class="section level2">
+<h2>Book scores</h2>
+<p>The most obvious way to summarise book “performance” is its mean score of numerical representation of scale. Using mean is not harmful in this study as no outlier can be present.</p>
+<pre class="r"><code>hp_book_score &lt;- hp %&gt;%
+  group_by(book_name) %&gt;%
+  summarise(mean_score = round(mean(score), digits = 2)) %&gt;%
+  arrange(desc(mean_score))
+
+hp_book_score
+## # A tibble: 7 x 2
+##   book_name                             mean_score
+##   &lt;fct&gt;                                      &lt;dbl&gt;
+## 1 Prisoner of Azkaban (#3)                    4.19
+## 2 Half-Blood Prince (#6)                      4.13
+## 3 Goblet of Fire (#4)                         4.00
+## 4 Deathly Hallows (#7)                        3.96
+## 5 Philosopher&#39;s (Sorcerer&#39;s) Stone (#1)       3.91
+## 6 Order of the Phoenix (#5)                   3.90
+## 7 Chamber of Secrets (#2)                     3.55</code></pre>
+<p><strong>So, “the best” book seems to be “Harry Potter and the Prisoner of Azkaban (#3)”</strong>.</p>
+<p>For more understanding of results, lets also visualize score distribution.</p>
+<pre class="r"><code>hp %&gt;%
+  # Compute share of score per book
+  count(book_name, score) %&gt;%
+  group_by(book_name) %&gt;%
+  mutate(share = n / sum(n)) %&gt;%
+  ungroup() %&gt;%
+  # Visualize
+  ggplot() +
+    geom_col(
+      aes(score, share, colour = score, fill = score),
+      show.legend = FALSE
+    ) +
+    geom_text(
+      data = hp_book_score,
+      mapping = aes(label = paste0(&quot;Mean = &quot;, mean_score)),
+      x = -Inf, y = Inf,
+      hjust = -0.05, vjust = 1.3
+    ) +
+    facet_wrap(~ book_name) +
+    scale_x_continuous(
+      breaks = 1:5,
+      labels = c(&quot;1\nPoor&quot;, &quot;2\nFair&quot;, &quot;3\nGood&quot;,
+                 &quot;4\nVery\nGood&quot;, &quot;5\nExcellent&quot;)
+    ) +
+    scale_fill_gradient(low = hp_pal[&quot;Raven&quot;], high = hp_pal[&quot;Raven_light&quot;]) +
+    scale_colour_gradient(low = hp_pal[&quot;Raven&quot;], high = hp_pal[&quot;Raven_light&quot;]) +
+    labs(
+      x = &quot;&quot;, y = &quot;Score share per book&quot;,
+      title = &#39;&quot;Prisoner of Azkaban (#3)&quot; seems to be &quot;the best&quot; HP book&#39;,
+      caption = &quot;@echasnovski&quot;
+    ) +
+    theme_bar()</code></pre>
+<p><img src="/post/2018-05-09-harry-potter-and-competition-results-with-comperes_files/figure-html/book-score_distribution-1.png" width="864" /></p>
+</div>
+</div>
+<div id="competition-results" class="section level1">
+<h1>Competition results</h1>
+<div id="formats-of-comperes" class="section level2">
+<h2>Formats of comperes</h2>
+<p>Understanding of <strong>competition</strong> is quite general: it is a set of <strong>games</strong> (abstract event) in which <strong>players</strong> (abstract entity) gain some abstract <strong>scores</strong> (typically numeric). Inside games all players are treated equally. The most natural example is sport results, however not the only one. For example, product rating can be considered as a competition between products as “players”. Here a “game” is a customer that reviews a set of products by rating them with numerical “score” (stars, points, etc.).</p>
+<p>In case of Harry Potter Books Survey results “game” is an act of respondent taking part in survey, “player” - Harry Potter book, “score” - discrete scale values converted to numerical score from 1 to 5.</p>
+<p>In <code>comperes</code> there are two supported formats of competition results:</p>
+<ul>
+<li><strong>Long format</strong>. It is the most abstract way of presenting competition results. Basically, it is a data frame (or tibble) with columns <code>game</code> (game identifier), <code>player</code> (player identifier) and <code>score</code> where <em>each row represents the score of particular player in particular game</em>. One game can consist from <strong>variable</strong> number of players which makes this format more usable. Extra columns are allowed.</li>
+<li><strong>Wide format</strong> is a more convenient way to store results with <strong>fixed</strong> number of players in a game. <em>Each row represents scores of all players in particular game</em>. Data should be organized in pairs of columns “player”-“score”. Identifier of a pair should go after respective keyword and consist only from digits. For example: <code>player1</code>, <code>score1</code>, <code>player2</code>, <code>score2</code>. Order doesn’t matter. Column <code>game</code> is optional. Extra columns are also allowed.</li>
+</ul>
+<p>Programmatically these formats are implemented as S3 classes <code>longcr</code> and <code>widecr</code> respectively. Essentially, they are tibbles with fixed structure. Objects of these classes should be created using functions <code>as_longcr()</code> and <code>as_widecr()</code> which also do conversions to other format.</p>
+</div>
+<div id="conversion" class="section level2">
+<h2>Conversion</h2>
+<p><code>hp_survey</code> presents results in <strong>long format</strong>.</p>
+<pre class="r"><code>hp_cr &lt;- hp_survey %&gt;%
+  transmute(
+    game = person, player = book,
+    score = as.integer(gsub(&quot;[^0-9].*$&quot;, &quot;&quot;, score))
+  ) %&gt;%
+  as_longcr()
+
+hp_cr
+## # A longcr object:
+## # A tibble: 657 x 3
+##    game player score
+##   &lt;int&gt; &lt;chr&gt;  &lt;int&gt;
+## 1     1 HP_6       5
+## 2     1 HP_7       5
+## 3     2 HP_1       3
+## 4     2 HP_4       5
+## 5     2 HP_5       2
+## # ... with 652 more rows</code></pre>
+<p>Here is the demonstration of conversion to <strong>wide format</strong>. It detects the maximum number of players in a game, which is 7, and assumes that data is missing in games with less number of players.</p>
+<pre class="r"><code>as_widecr(hp_cr)
+## # A widecr object:
+## # A tibble: 182 x 15
+##    game player1 score1 player2 score2 player3 score3 player4 score4
+##   &lt;int&gt; &lt;chr&gt;    &lt;int&gt; &lt;chr&gt;    &lt;int&gt; &lt;chr&gt;    &lt;int&gt; &lt;chr&gt;    &lt;int&gt;
+## 1     1 HP_6         5 HP_7         5 &lt;NA&gt;        NA &lt;NA&gt;        NA
+## 2     2 HP_1         3 HP_4         5 HP_5         2 HP_6         4
+## 3     3 HP_1         3 HP_3         4 HP_5         1 &lt;NA&gt;        NA
+## 4     4 HP_6         5 HP_7         5 &lt;NA&gt;        NA &lt;NA&gt;        NA
+## 5     5 HP_4         4 HP_5         3 &lt;NA&gt;        NA &lt;NA&gt;        NA
+## # ... with 177 more rows, and 6 more variables: player5 &lt;chr&gt;,
+## #   score5 &lt;int&gt;, player6 &lt;chr&gt;, score6 &lt;int&gt;, player7 &lt;chr&gt;, score7 &lt;int&gt;</code></pre>
+</div>
+</div>
+<div id="head-to-head" class="section level1">
+<h1>Head-to-Head</h1>
+<div id="functionality-of-comperes" class="section level2">
+<h2>Functionality of comperes</h2>
+<p>Head-to-Head value is a <strong>summary statistic of direct confrontation between two players</strong>. It is assumed that this value can be computed based only on the players’ matchups (results for ordered pairs of players from one game). In other words, every game is converted into series of “subgames” between ordered pairs of players (including selfplay) which is stored as <code>widecr</code> object. After that, summary of item, defined by columns player1 and player2, is computed.</p>
+<p><code>comperes</code> has function <code>get_matchups()</code> for computing matchups:</p>
+<pre class="r"><code>get_matchups(hp_cr)
+## # A widecr object:
+## # A tibble: 2,697 x 5
+##    game player1 score1 player2 score2
+##   &lt;int&gt; &lt;chr&gt;    &lt;int&gt; &lt;chr&gt;    &lt;int&gt;
+## 1     1 HP_6         5 HP_6         5
+## 2     1 HP_6         5 HP_7         5
+## 3     1 HP_7         5 HP_6         5
+## 4     1 HP_7         5 HP_7         5
+## 5     2 HP_1         3 HP_1         3
+## # ... with 2,692 more rows</code></pre>
+<p>To compute multiple Head-to-Head values, use <code>h2h_long()</code> supplying competition results and summarizing expressions in <a href="https://dplyr.tidyverse.org/reference/summarise.html"><code>dplyr::summarise()</code></a> fashion. They will be applied to a data frame of matchups.</p>
+<pre class="r"><code>hp_cr_h2h &lt;- hp_cr %&gt;% h2h_long(
+  # Number of macthups
+  n = n(),
+  # Number of wins plus half the number of ties
+  # num_wins() is a function from comperes to compute number of times
+  # first score is bigger than second one
+  num_wins = num_wins(score1, score2, half_for_draw = TRUE),
+  # Mean rating of a book scored in matchups with other books
+  mean_score = mean(score1),
+  # Mean rating difference of books scored in direct matchups
+  mean_score_diff = mean(score1 - score2)
+) %&gt;%
+  mutate_if(is.numeric, funs(round(., 2)))
+
+hp_cr_h2h
+## # A long format of Head-to-Head values:
+## # A tibble: 49 x 6
+##   player1 player2     n num_wins mean_score mean_score_diff
+##   &lt;chr&gt;   &lt;chr&gt;   &lt;dbl&gt;    &lt;dbl&gt;      &lt;dbl&gt;           &lt;dbl&gt;
+## 1 HP_1    HP_1      88.     44.0       3.91          0.    
+## 2 HP_1    HP_2      42.     29.5       3.88          0.500 
+## 3 HP_1    HP_3      51.     19.5       3.92         -0.390 
+## 4 HP_1    HP_4      48.     24.0       3.79          0.0400
+## 5 HP_1    HP_5      42.     21.5       3.79          0.    
+## # ... with 44 more rows</code></pre>
+<p>So here we see, for example, that HP_1 and HP_2 had 42 matchups, i.e. they were rated by the same person 42 times. <code>HP_1</code> “won” 29.5 (respecting ties) times, gained mean score of 3.88 in those matchups and had, on average, 0.5 points more.</p>
+<p>There is also an <code>h2h_mat()</code> function which computes a matrix of Head-to-Head values for one expression.</p>
+<pre class="r"><code>hp_cr %&gt;% h2h_mat(num_wins(score1, score2, half_for_draw = TRUE))
+## # A matrix format of Head-to-Head values:
+##      HP_1 HP_2 HP_3 HP_4 HP_5 HP_6 HP_7
+## HP_1 44.0 29.5 19.5 24.0 21.5 17.0 24.0
+## HP_2 12.5 40.0 12.0 11.5 10.5 12.0 19.0
+## HP_3 31.5 32.0 49.0 31.5 28.0 25.0 33.5
+## HP_4 24.0 33.5 26.5 49.5 23.5 30.5 31.5
+## HP_5 20.5 25.5 15.0 24.5 42.0 23.0 24.5
+## HP_6 25.0 30.0 20.0 27.5 24.0 50.0 34.0
+## HP_7 26.0 34.0 21.5 29.5 25.5 26.0 54.0</code></pre>
+<p>For more convenient usage, <code>comperes</code> has a list <code>h2h_funs</code> of some common Head-to-Head functions stored as <a href="http://rlang.r-lib.org/reference/quotation.html">expressions</a>. To use them you need a little bit of <a href="http://rlang.r-lib.org/index.html">rlang</a>’s <a href="http://rlang.r-lib.org/reference/quasiquotation.html">unquoting magic</a>.</p>
+<pre class="r"><code>h2h_funs[1:3]
+## $mean_score_diff
+## mean(score1 - score2)
+## 
+## $mean_score_diff_pos
+## max(mean(score1 - score2), 0)
+## 
+## $mean_score
+## mean(score1)
+
+hp_cr %&gt;% h2h_long(!!! h2h_funs)
+## # A long format of Head-to-Head values:
+## # A tibble: 49 x 11
+##   player1 player2 mean_score_diff mean_score_diff_pos mean_score
+##   &lt;chr&gt;   &lt;chr&gt;             &lt;dbl&gt;               &lt;dbl&gt;      &lt;dbl&gt;
+## 1 HP_1    HP_1             0.                  0.           3.91
+## 2 HP_1    HP_2             0.500               0.500        3.88
+## 3 HP_1    HP_3            -0.392               0.           3.92
+## 4 HP_1    HP_4             0.0417              0.0417       3.79
+## 5 HP_1    HP_5             0.                  0.           3.79
+## # ... with 44 more rows, and 6 more variables: sum_score_diff &lt;int&gt;,
+## #   sum_score_diff_pos &lt;dbl&gt;, sum_score &lt;int&gt;, num_wins &lt;dbl&gt;,
+## #   num_wins2 &lt;dbl&gt;, num &lt;int&gt;</code></pre>
+</div>
+<div id="harry-potter-books" class="section level2">
+<h2>Harry Potter books</h2>
+<p>Head-to-Head “performance” of Harry Potter books is summarised in the following plot:</p>
+<pre class="r"><code>hp_cr_h2h %&gt;%
+  gather(h2h_fun, value, -player1, -player2) %&gt;%
+  # Manually produce a dummy colour variable to use in facets
+  group_by(h2h_fun) %&gt;%
+  mutate(col = (value - min(value)) / (max(value) - min(value))) %&gt;%
+  ungroup() %&gt;%
+  # Make factors for correct orders
+  mutate(
+    player1 = factor(player1, levels = rev(sort(unique(player1)))),
+    player2 = factor(player2, levels = sort(unique(player2))),
+    h2h_fun = factor(h2h_fun,
+                     levels = c(&quot;n&quot;, &quot;num_wins&quot;,
+                                &quot;mean_score&quot;, &quot;mean_score_diff&quot;)),
+    h2h_fun = recode(
+      h2h_fun,
+      n = &quot;Number of matchups (ratings by common person)&quot;,
+      num_wins = &#39;Number of &quot;wins&quot; in matchups (half for ties)&#39;,
+      mean_score = &quot;Mean score in matchups&quot;,
+      mean_score_diff = &quot;Mean score difference in matchups&quot;
+    )
+  ) %&gt;%
+  # Visualize
+  ggplot(aes(player1, player2)) +
+    geom_text(
+      aes(label = value, colour = col),
+      size = 5, fontface = &quot;bold&quot;, show.legend = FALSE
+    ) +
+    facet_wrap(~ h2h_fun, scales = &quot;free&quot;) +
+    # To coordinate well with matrix form of Head-to-Head results
+    coord_flip() +
+    scale_colour_gradient(low = hp_pal[&quot;Slyth&quot;], high = hp_pal[&quot;Gryff&quot;]) +
+    labs(
+      x = &quot;&quot;, y = &quot;&quot;,
+      title = &quot;Head-to-Head performance of Harry Potter books&quot;,
+      subtitle = paste0(
+        &#39;&quot;HP_x&quot; means Harry Potter book number &quot;x&quot; in series\n&#39;,
+        &quot;Numbers are Head-to-Head values of book in row against book in column&quot;
+      ),
+      caption = &quot;@echasnovski&quot;
+    ) +
+    theme_classic() +
+    theme(strip.text = element_text(face = &quot;bold&quot;))</code></pre>
+<p><img src="/post/2018-05-09-harry-potter-and-competition-results-with-comperes_files/figure-html/hp_cr_h2h-plot-1.png" width="864" /></p>
+<p>There is a lot of information hidden in this plot. The most obvious discoveries:</p>
+<ul>
+<li>It happened that book <em>“HP_7”</em> (“Deathly Hallows”) was rated with <em>“HP_4”</em> (“Goblet of Fire”) by one person the most: 61 times.</li>
+<li><em>“HP_7”</em> scored over <em>“HP_2”</em> (“Chamber of Secrets”) the most wins (34, half for ties) as did <em>“HP_6”</em> (“Half-Blood Prince”) over “HP_7”.</li>
+<li>Book <em>“HP_6”</em> made the highest mean score of 4.36 in matchups with <em>“HP_2”</em>, which is bigger by 0.23 from its overall mean score.</li>
+<li>In terms of score differences, <em>“HP_3”</em> (“Prisoner of Azkaban”) did best in matchups with <em>“HP_2”</em>, scoring on average 0.77 points more. This pair also represents “the best” and “the worst” books in terms of mean score.</li>
+</ul>
+</div>
+</div>
+<div id="conclusion" class="section level1">
+<h1>Conclusion</h1>
+<ul>
+<li>A public call for help in creating data set for R package shouldn’t be made on Reddit but rather on R-bloggers or Twitter.</li>
+<li>Among all original Harry Potter books, “Harry Potter and the Prisoner of Azkaban” seems to be considered “best” among R users. “Harry Potter and the Chamber of Secrets” suffers the opposite fate.</li>
+<li>Package <code>comperes</code> is useful for storing, manipulating and summarising abstract competition results.</li>
+<li>However informative, manually inspecting competition results with direct summaries and Head-to-Head tables is hard. They can display complex nature of performance relations between players. Next analysis of Harry Potter Books Survey data will be using my package <a href="https://github.com/echasnovski/comperank">comperank</a> which implements different ranking methods for automatic discovery of player’s performance.</li>
+</ul>
+{{% spoiler id="sessionInfo" title="sessionInfo()" %}}
+<pre class="r"><code>sessionInfo()
+## R version 3.4.4 (2018-03-15)
+## Platform: x86_64-pc-linux-gnu (64-bit)
+## Running under: Ubuntu 16.04.4 LTS
+## 
+## Matrix products: default
+## BLAS: /usr/lib/openblas-base/libblas.so.3
+## LAPACK: /usr/lib/libopenblasp-r0.2.18.so
+## 
+## locale:
+##  [1] LC_CTYPE=ru_UA.UTF-8       LC_NUMERIC=C              
+##  [3] LC_TIME=ru_UA.UTF-8        LC_COLLATE=ru_UA.UTF-8    
+##  [5] LC_MONETARY=ru_UA.UTF-8    LC_MESSAGES=ru_UA.UTF-8   
+##  [7] LC_PAPER=ru_UA.UTF-8       LC_NAME=C                 
+##  [9] LC_ADDRESS=C               LC_TELEPHONE=C            
+## [11] LC_MEASUREMENT=ru_UA.UTF-8 LC_IDENTIFICATION=C       
+## 
+## attached base packages:
+## [1] methods   stats     graphics  grDevices utils     datasets  base     
+## 
+## other attached packages:
+## [1] bindrcpp_0.2.2   comperes_0.2.0   ggplot2_2.2.1    stringr_1.3.0   
+## [5] rlang_0.2.0      tidyr_0.8.0.9000 dplyr_0.7.5.9000
+## 
+## loaded via a namespace (and not attached):
+##  [1] Rcpp_0.12.16     pillar_1.2.1     compiler_3.4.4   plyr_1.8.4      
+##  [5] bindr_0.1.1      tools_3.4.4      digest_0.6.15    evaluate_0.10.1 
+##  [9] tibble_1.4.2     gtable_0.2.0     pkgconfig_2.0.1  cli_1.0.0       
+## [13] yaml_2.1.17      blogdown_0.5     xfun_0.1         knitr_1.20      
+## [17] rprojroot_1.3-2  grid_3.4.4       tidyselect_0.2.4 glue_1.2.0      
+## [21] R6_2.2.2         rmarkdown_1.9    bookdown_0.7     purrr_0.2.4     
+## [25] magrittr_1.5     backports_1.1.2  scales_0.5.0     htmltools_0.3.6 
+## [29] assertthat_0.2.0 colorspace_1.3-2 labeling_0.3     utf8_1.1.3      
+## [33] stringi_1.1.6    lazyeval_0.2.1   munsell_0.4.3    crayon_1.3.4</code></pre>
+{{% /spoiler %}}
+</div>
