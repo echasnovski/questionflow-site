@@ -1,0 +1,157 @@
+---
+title: General gems of comeres
+author: Evgeni Chasnovski
+date: '2018-05-17'
+publishDate: '2018-05-17'
+slug: general-gems-of-comeres
+categories: []
+tags:
+  - rstats
+  - comperes
+description: 'Examples of exported functions from comperes package that could be useful for general tasks.'
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  eval = TRUE,
+  collapse = TRUE,
+  fig.width = 9
+)
+options(tibble.print_min = 5, tibble.print_max = 10)
+```
+
+# Prologue
+
+I am very glad to announce that my new package [comperes](https://github.com/echasnovski/comperes) is [on CRAN](https://CRAN.R-project.org/package=comperes) now. It provides tools for managing competition results in a [tidy](https://cran.r-project.org/web/packages/tidyr/vignettes/tidy-data.html) manner as much as possible. For more information go to:
+
+- Package [README](https://github.com/echasnovski/comperes#comperes-manage-competition-results).
+- Package [vignettes](https://echasnovski.github.io/comperes/articles/).
+- My [previous post](`r blogdown::shortcode(.name = "relref", '\"2018-05-09-harry-potter-and-competition-results-with-comperes.html\"', .type = "html")`) for usage examples based on built-in `hp_survey` data set (results of my [Harry Potter Books Survey](`r blogdown::shortcode(.name = "relref", '\"2018-04-09-struggle-with-harry-potter-data.html\"', .type = "html")`)).
+
+Besides tools for competition results, `comperes` offers some functions that can be useful in more general tasks. This post presents examples of their most common usage.
+
+# Overview
+
+This post covers the following themes:
+
+- __Compute vector levels__ with [levels2()](https://echasnovski.github.io/comperes/reference/levels2.html).
+- __Manage item summaries__ with [summarise_item()](https://echasnovski.github.io/comperes/reference/item-summary.html) and [join_item_summary()](https://echasnovski.github.io/comperes/reference/item-summary-join.html).
+- __Convert pairwise data__ with [long_to_mat() and mat_to_long()](https://echasnovski.github.io/comperes/reference/convert-pair-value.html).
+
+For examples we will use a shortened version of the everlasting `mtcars` data set. We will need the following setup:
+
+```{r library, message = FALSE}
+library(comperes)
+library(rlang)
+# For example analysis
+library(dplyr)
+library(tibble)
+
+mtcars_tbl <- mtcars %>%
+  rownames_to_column(var = "car") %>%
+  select(car, cyl, vs, carb) %>%
+  as_tibble()
+```
+
+# Compute vector levels
+
+We will start with the most simple function. During `comperes` development, idea about the it really helped me reason more clearly about package functional API. I am talking about [levels2()](https://echasnovski.github.io/comperes/reference/levels2.html) which computes "levels" of any non-list vector.
+
+It has the following logic: if `x` has `levels` attribute then return `levels(x)`; otherwise return character representation of vector's sorted unique values. Notes about design and implementation of this function:
+
+- I hesitated _a lot_ about whether it should return character or same type as input vector in case `x` has no `levels`. In many practical cases there is a need in latter behavior. However, in the end I decided that type stable output (`levels(x)` always returns character vector or `NULL`) is better.
+- Conversion to character is done __after__ sorting, which is really important when dealing with numeric vectors.
+
+This function is helpful when one needs to produce unique values in standardized manner (for example, during pairwise distance computation). Some examples:
+
+```{r levels2}
+levels2(mtcars_tbl$cyl)
+
+# Importance of conversion to character after sorting
+tricky_vec <- c(10, 1, 2, 12)
+sort(as.character(tricky_vec))
+levels2(tricky_vec)
+```
+
+# Manage item summaries
+
+Arguably, the most common task in data analysis is computation of group summaries. This task is conveniently done by consecutive application of [dplyr](https://dplyr.tidyverse.org/)'s `group_by()`, `summarise()` and `ungroup()` (to return regular data frame and not grouped one). `comperes` offers a wrapper [summarise_item()](https://echasnovski.github.io/comperes/reference/item-summary.html) for this task (which always returns [tibble](https://tibble.tidyverse.org/) instead of a data frame) with additional feature of modifying column names by adding prefix (which will be handy soon):
+
+```{r summarise_item}
+cyl_vs_summary <- mtcars_tbl %>%
+  summarise_item(
+    item = c("cyl", "vs"),
+    n = n(), mean_carb = mean(carb),
+    .prefix = "cyl_vs__"
+  )
+cyl_vs_summary
+```
+
+Sometimes, there is also a need to compare actual values with their summaries across different grouping. For example, __determine whether car's number of carburetors (`carb`) is bigger than average value per different groupings__: by number of cylinders `cyl` and V/S `vs`.
+
+To simplify this task, `comperes` offers a [join_item_summary()](https://echasnovski.github.io/comperes/reference/item-summary-join.html) function for that: it computes item summary with `summarise_item()` and joins it (with `dplyr::left_join()`) to input data frame:
+
+```{r join_item_summary}
+# Save (with rlang magic) expression for reused summary
+carb_summary <- list(mean_carb = expr(mean(carb)))
+
+# Create new columns with joined grouped summaries
+mtcats_gear_summary <- mtcars_tbl %>%
+  join_item_summary("cyl", !!! carb_summary, .prefix = "cyl__") %>%
+  join_item_summary("vs",  !!! carb_summary, .prefix = "vs__")
+
+print(mtcats_gear_summary, width = Inf)
+
+# Compute comparisons
+mtcats_gear_summary %>%
+  mutate_at(vars(ends_with("mean_carb")), funs(carb > .)) %>%
+  select(car, ends_with("mean_carb")) %>%
+  rename_at(vars(-car), funs(gsub("__mean_carb$", "", .)))
+```
+
+Adding different prefixes helps navigating through columns with different summaries.
+
+# Convert pariwise data
+
+One of the main features of `comperes` is the ability to compute [Head-to-Head](https://echasnovski.github.io/comperes/reference/h2h_long.html#head-to-head-value) values of players in competition. There are functions `h2h_long()` and `h2h_mat()` which produce output in "long" (tibble with row describing one ordered pair) and "matrix" (matrix with cell value describing pair in corresponding row and column) formats respectively.
+
+These formats of pairwise data is quite common: "long" is better for tidy computing and "matrix" is better for result presentation. Also converting distance matrix to data frame with pair data is a theme of several Stack Overflow questions (for example, [this one](https://stackoverflow.com/questions/27892100/distance-matrix-to-pairwise-distance-list-in-r) and [that one](https://stackoverflow.com/questions/21180464/distance-matrix-to-data-frame-pairs-in-r)).
+
+Package `comperes` has functions `as_h2h_long()` and `as_h2h_mat()` for converting between those formats. They are powered by a "general usage" functions [long_to_mat() and mat_to_long()](https://echasnovski.github.io/comperes/reference/convert-pair-value.html). Here is an example of how they can be used to convert between different formats of pairwise distances:
+
+```{r convert-pairwise-data}
+# Compute matrix of pairwise distances based on all numeric columns
+dist_mat <- mtcars_tbl %>%
+  select_if(is.numeric) %>%
+  dist() %>%
+  as.matrix()
+dist_mat[1:4, 1:4]
+
+# Convert to data frame (tibble in this case)
+dist_tbl <- dist_mat %>%
+  mat_to_long(row_key = "id_1", col_key = "id_2", value = "dist")
+dist_tbl
+
+# Convert tibble back to matrix
+dist_mat_new <- dist_tbl %>%
+  # To make natural row and column sortings
+  mutate_at(vars("id_1", "id_2"), as.numeric) %>%
+  long_to_mat(row_key = "id_1", col_key = "id_2", value = "dist")
+identical(dist_mat, dist_mat_new)
+```
+
+# Conclusion
+
+- Package `comperes` provides not only tools for managing competition results but also functions with general purpose:
+    - Compute vector levels with `levels2()`. Usually used to produce unique values in standardized manner.
+    - Manage item summaries with `summarise_item()` and `join_item_summary()`. May be used to concisely compute comparisons of values with summaries from different groupings.
+    - Convert pairwise data with `long_to_mat()` and `mat_to_long()`. Very helpful in converting pairwise distances between "long" and "matrix" formats.
+
+`r blogdown::shortcode("spoiler", id = '\"sessionInfo\"', title = '\"sessionInfo()\"')`
+
+```{r sessionInfo, eval = TRUE}
+sessionInfo()
+```
+
+`r blogdown::shortcode("/spoiler")`

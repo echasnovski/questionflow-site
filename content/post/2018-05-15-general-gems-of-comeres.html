@@ -1,0 +1,203 @@
+---
+title: General gems of comeres
+author: Evgeni Chasnovski
+date: '2018-05-17'
+publishDate: '2018-05-17'
+slug: general-gems-of-comeres
+categories: []
+tags:
+  - rstats
+  - comperes
+description: 'Examples of exported functions from comperes package that could be useful for general tasks.'
+---
+
+
+
+<div id="prologue" class="section level1">
+<h1>Prologue</h1>
+<p>I am very glad to announce that my new package <a href="https://github.com/echasnovski/comperes">comperes</a> is <a href="https://CRAN.R-project.org/package=comperes">on CRAN</a> now. It provides tools for managing competition results in a <a href="https://cran.r-project.org/web/packages/tidyr/vignettes/tidy-data.html">tidy</a> manner as much as possible. For more information go to:</p>
+<ul>
+<li>Package <a href="https://github.com/echasnovski/comperes#comperes-manage-competition-results">README</a>.</li>
+<li>Package <a href="https://echasnovski.github.io/comperes/articles/">vignettes</a>.</li>
+<li>My <a href="{{< relref "2018-05-09-harry-potter-and-competition-results-with-comperes.html" >}}">previous post</a> for usage examples based on built-in <code>hp_survey</code> data set (results of my <a href="{{< relref "2018-04-09-struggle-with-harry-potter-data.html" >}}">Harry Potter Books Survey</a>).</li>
+</ul>
+<p>Besides tools for competition results, <code>comperes</code> offers some functions that can be useful in more general tasks. This post presents examples of their most common usage.</p>
+</div>
+<div id="overview" class="section level1">
+<h1>Overview</h1>
+<p>This post covers the following themes:</p>
+<ul>
+<li><strong>Compute vector levels</strong> with <a href="https://echasnovski.github.io/comperes/reference/levels2.html">levels2()</a>.</li>
+<li><strong>Manage item summaries</strong> with <a href="https://echasnovski.github.io/comperes/reference/item-summary.html">summarise_item()</a> and <a href="https://echasnovski.github.io/comperes/reference/item-summary-join.html">join_item_summary()</a>.</li>
+<li><strong>Convert pairwise data</strong> with <a href="https://echasnovski.github.io/comperes/reference/convert-pair-value.html">long_to_mat() and mat_to_long()</a>.</li>
+</ul>
+<p>For examples we will use a shortened version of the everlasting <code>mtcars</code> data set. We will need the following setup:</p>
+<pre class="r"><code>library(comperes)
+library(rlang)
+# For example analysis
+library(dplyr)
+library(tibble)
+
+mtcars_tbl &lt;- mtcars %&gt;%
+  rownames_to_column(var = &quot;car&quot;) %&gt;%
+  select(car, cyl, vs, carb) %&gt;%
+  as_tibble()</code></pre>
+</div>
+<div id="compute-vector-levels" class="section level1">
+<h1>Compute vector levels</h1>
+<p>We will start with the most simple function. During <code>comperes</code> development, idea about the it really helped me reason more clearly about package functional API. I am talking about <a href="https://echasnovski.github.io/comperes/reference/levels2.html">levels2()</a> which computes “levels” of any non-list vector.</p>
+<p>It has the following logic: if <code>x</code> has <code>levels</code> attribute then return <code>levels(x)</code>; otherwise return character representation of vector’s sorted unique values. Notes about design and implementation of this function:</p>
+<ul>
+<li>I hesitated <em>a lot</em> about whether it should return character or same type as input vector in case <code>x</code> has no <code>levels</code>. In many practical cases there is a need in latter behavior. However, in the end I decided that type stable output (<code>levels(x)</code> always returns character vector or <code>NULL</code>) is better.</li>
+<li>Conversion to character is done <strong>after</strong> sorting, which is really important when dealing with numeric vectors.</li>
+</ul>
+<p>This function is helpful when one needs to produce unique values in standardized manner (for example, during pairwise distance computation). Some examples:</p>
+<pre class="r"><code>levels2(mtcars_tbl$cyl)
+## [1] &quot;4&quot; &quot;6&quot; &quot;8&quot;
+
+# Importance of conversion to character after sorting
+tricky_vec &lt;- c(10, 1, 2, 12)
+sort(as.character(tricky_vec))
+## [1] &quot;1&quot;  &quot;10&quot; &quot;12&quot; &quot;2&quot;
+levels2(tricky_vec)
+## [1] &quot;1&quot;  &quot;2&quot;  &quot;10&quot; &quot;12&quot;</code></pre>
+</div>
+<div id="manage-item-summaries" class="section level1">
+<h1>Manage item summaries</h1>
+<p>Arguably, the most common task in data analysis is computation of group summaries. This task is conveniently done by consecutive application of <a href="https://dplyr.tidyverse.org/">dplyr</a>’s <code>group_by()</code>, <code>summarise()</code> and <code>ungroup()</code> (to return regular data frame and not grouped one). <code>comperes</code> offers a wrapper <a href="https://echasnovski.github.io/comperes/reference/item-summary.html">summarise_item()</a> for this task (which always returns <a href="https://tibble.tidyverse.org/">tibble</a> instead of a data frame) with additional feature of modifying column names by adding prefix (which will be handy soon):</p>
+<pre class="r"><code>cyl_vs_summary &lt;- mtcars_tbl %&gt;%
+  summarise_item(
+    item = c(&quot;cyl&quot;, &quot;vs&quot;),
+    n = n(), mean_carb = mean(carb),
+    .prefix = &quot;cyl_vs__&quot;
+  )
+cyl_vs_summary
+## # A tibble: 5 x 4
+##     cyl    vs cyl_vs__n cyl_vs__mean_carb
+##   &lt;dbl&gt; &lt;dbl&gt;     &lt;int&gt;             &lt;dbl&gt;
+## 1    4.    0.         1              2.00
+## 2    4.    1.        10              1.50
+## 3    6.    0.         3              4.67
+## 4    6.    1.         4              2.50
+## 5    8.    0.        14              3.50</code></pre>
+<p>Sometimes, there is also a need to compare actual values with their summaries across different grouping. For example, <strong>determine whether car’s number of carburetors (<code>carb</code>) is bigger than average value per different groupings</strong>: by number of cylinders <code>cyl</code> and V/S <code>vs</code>.</p>
+<p>To simplify this task, <code>comperes</code> offers a <a href="https://echasnovski.github.io/comperes/reference/item-summary-join.html">join_item_summary()</a> function for that: it computes item summary with <code>summarise_item()</code> and joins it (with <code>dplyr::left_join()</code>) to input data frame:</p>
+<pre class="r"><code># Save (with rlang magic) expression for reused summary
+carb_summary &lt;- list(mean_carb = expr(mean(carb)))
+
+# Create new columns with joined grouped summaries
+mtcats_gear_summary &lt;- mtcars_tbl %&gt;%
+  join_item_summary(&quot;cyl&quot;, !!! carb_summary, .prefix = &quot;cyl__&quot;) %&gt;%
+  join_item_summary(&quot;vs&quot;,  !!! carb_summary, .prefix = &quot;vs__&quot;)
+
+print(mtcats_gear_summary, width = Inf)
+## # A tibble: 32 x 6
+##   car                 cyl    vs  carb cyl__mean_carb vs__mean_carb
+##   &lt;chr&gt;             &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;          &lt;dbl&gt;         &lt;dbl&gt;
+## 1 Mazda RX4            6.    0.    4.           3.43          3.61
+## 2 Mazda RX4 Wag        6.    0.    4.           3.43          3.61
+## 3 Datsun 710           4.    1.    1.           1.55          1.79
+## 4 Hornet 4 Drive       6.    1.    1.           3.43          1.79
+## 5 Hornet Sportabout    8.    0.    2.           3.50          3.61
+## # ... with 27 more rows
+
+# Compute comparisons
+mtcats_gear_summary %&gt;%
+  mutate_at(vars(ends_with(&quot;mean_carb&quot;)), funs(carb &gt; .)) %&gt;%
+  select(car, ends_with(&quot;mean_carb&quot;)) %&gt;%
+  rename_at(vars(-car), funs(gsub(&quot;__mean_carb$&quot;, &quot;&quot;, .)))
+## # A tibble: 32 x 3
+##   car               cyl   vs   
+##   &lt;chr&gt;             &lt;lgl&gt; &lt;lgl&gt;
+## 1 Mazda RX4         TRUE  TRUE 
+## 2 Mazda RX4 Wag     TRUE  TRUE 
+## 3 Datsun 710        FALSE FALSE
+## 4 Hornet 4 Drive    FALSE FALSE
+## 5 Hornet Sportabout FALSE FALSE
+## # ... with 27 more rows</code></pre>
+<p>Adding different prefixes helps navigating through columns with different summaries.</p>
+</div>
+<div id="convert-pariwise-data" class="section level1">
+<h1>Convert pariwise data</h1>
+<p>One of the main features of <code>comperes</code> is the ability to compute <a href="https://echasnovski.github.io/comperes/reference/h2h_long.html#head-to-head-value">Head-to-Head</a> values of players in competition. There are functions <code>h2h_long()</code> and <code>h2h_mat()</code> which produce output in “long” (tibble with row describing one ordered pair) and “matrix” (matrix with cell value describing pair in corresponding row and column) formats respectively.</p>
+<p>These formats of pairwise data is quite common: “long” is better for tidy computing and “matrix” is better for result presentation. Also converting distance matrix to data frame with pair data is a theme of several Stack Overflow questions (for example, <a href="https://stackoverflow.com/questions/27892100/distance-matrix-to-pairwise-distance-list-in-r">this one</a> and <a href="https://stackoverflow.com/questions/21180464/distance-matrix-to-data-frame-pairs-in-r">that one</a>).</p>
+<p>Package <code>comperes</code> has functions <code>as_h2h_long()</code> and <code>as_h2h_mat()</code> for converting between those formats. They are powered by a “general usage” functions <a href="https://echasnovski.github.io/comperes/reference/convert-pair-value.html">long_to_mat() and mat_to_long()</a>. Here is an example of how they can be used to convert between different formats of pairwise distances:</p>
+<pre class="r"><code># Compute matrix of pairwise distances based on all numeric columns
+dist_mat &lt;- mtcars_tbl %&gt;%
+  select_if(is.numeric) %&gt;%
+  dist() %&gt;%
+  as.matrix()
+dist_mat[1:4, 1:4]
+##          1        2        3        4
+## 1 0.000000 0.000000 3.741657 3.162278
+## 2 0.000000 0.000000 3.741657 3.162278
+## 3 3.741657 3.741657 0.000000 2.000000
+## 4 3.162278 3.162278 2.000000 0.000000
+
+# Convert to data frame (tibble in this case)
+dist_tbl &lt;- dist_mat %&gt;%
+  mat_to_long(row_key = &quot;id_1&quot;, col_key = &quot;id_2&quot;, value = &quot;dist&quot;)
+dist_tbl
+## # A tibble: 1,024 x 3
+##   id_1  id_2   dist
+##   &lt;chr&gt; &lt;chr&gt; &lt;dbl&gt;
+## 1 1     1      0.  
+## 2 1     2      0.  
+## 3 1     3      3.74
+## 4 1     4      3.16
+## 5 1     5      2.83
+## # ... with 1,019 more rows
+
+# Convert tibble back to matrix
+dist_mat_new &lt;- dist_tbl %&gt;%
+  # To make natural row and column sortings
+  mutate_at(vars(&quot;id_1&quot;, &quot;id_2&quot;), as.numeric) %&gt;%
+  long_to_mat(row_key = &quot;id_1&quot;, col_key = &quot;id_2&quot;, value = &quot;dist&quot;)
+identical(dist_mat, dist_mat_new)
+## [1] TRUE</code></pre>
+</div>
+<div id="conclusion" class="section level1">
+<h1>Conclusion</h1>
+<ul>
+<li>Package <code>comperes</code> provides not only tools for managing competition results but also functions with general purpose:
+<ul>
+<li>Compute vector levels with <code>levels2()</code>. Usually used to produce unique values in standardized manner.</li>
+<li>Manage item summaries with <code>summarise_item()</code> and <code>join_item_summary()</code>. May be used to concisely compute comparisons of values with summaries from different groupings.</li>
+<li>Convert pairwise data with <code>long_to_mat()</code> and <code>mat_to_long()</code>. Very helpful in converting pairwise distances between “long” and “matrix” formats.</li>
+</ul></li>
+</ul>
+{{% spoiler id="sessionInfo" title="sessionInfo()" %}}
+<pre class="r"><code>sessionInfo()
+## R version 3.4.4 (2018-03-15)
+## Platform: x86_64-pc-linux-gnu (64-bit)
+## Running under: Ubuntu 16.04.4 LTS
+## 
+## Matrix products: default
+## BLAS: /usr/lib/openblas-base/libblas.so.3
+## LAPACK: /usr/lib/libopenblasp-r0.2.18.so
+## 
+## locale:
+##  [1] LC_CTYPE=ru_UA.UTF-8       LC_NUMERIC=C              
+##  [3] LC_TIME=ru_UA.UTF-8        LC_COLLATE=ru_UA.UTF-8    
+##  [5] LC_MONETARY=ru_UA.UTF-8    LC_MESSAGES=ru_UA.UTF-8   
+##  [7] LC_PAPER=ru_UA.UTF-8       LC_NAME=C                 
+##  [9] LC_ADDRESS=C               LC_TELEPHONE=C            
+## [11] LC_MEASUREMENT=ru_UA.UTF-8 LC_IDENTIFICATION=C       
+## 
+## attached base packages:
+## [1] methods   stats     graphics  grDevices utils     datasets  base     
+## 
+## other attached packages:
+## [1] bindrcpp_0.2.2   tibble_1.4.2     dplyr_0.7.5.9000 rlang_0.2.0     
+## [5] comperes_0.2.0  
+## 
+## loaded via a namespace (and not attached):
+##  [1] Rcpp_0.12.16     knitr_1.20       bindr_0.1.1      magrittr_1.5    
+##  [5] tidyselect_0.2.4 R6_2.2.2         stringr_1.3.0    tools_3.4.4     
+##  [9] xfun_0.1         utf8_1.1.3       cli_1.0.0        htmltools_0.3.6 
+## [13] yaml_2.1.17      rprojroot_1.3-2  digest_0.6.15    assertthat_0.2.0
+## [17] crayon_1.3.4     bookdown_0.7     purrr_0.2.4      glue_1.2.0      
+## [21] evaluate_0.10.1  rmarkdown_1.9    blogdown_0.5     stringi_1.1.6   
+## [25] compiler_3.4.4   pillar_1.2.1     backports_1.1.2  pkgconfig_2.0.1</code></pre>
+{{% /spoiler %}}
+</div>
