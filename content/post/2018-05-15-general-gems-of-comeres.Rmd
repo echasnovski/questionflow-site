@@ -1,5 +1,5 @@
 ---
-title: General gems of comeres
+title: General gems of comperes
 author: Evgeni Chasnovski
 date: '2018-05-17'
 publishDate: '2018-05-17'
