@@ -1,0 +1,228 @@
+---
+title: Harry Potter and rankings with comperank
+author: Evgeni Chasnovski
+date: '2018-05-31'
+publishDate: '2018-05-31'
+slug: harry-potter-and-rankings-with-comperank
+categories: []
+tags:
+  - rstats
+  - comperank
+  - comperes
+description: 'Ranking Harry Potter books with comperank package.'
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  eval = TRUE,
+  collapse = TRUE,
+  fig.width = 9
+)
+options(tibble.print_min = 5, tibble.print_max = 10)
+```
+
+# Prologue
+
+Package [comperank](https://github.com/echasnovski/comperank) is [on CRAN](https://CRAN.R-project.org/package=comperank) now. It offers consistent implementations of several ranking and rating methods. Originally, it was intended to be my first CRAN package when I started to build it 13 months ago. Back then I was very curious to learn about different ranking and rating methods that are used in sport. This led me to two conclusions:
+
+- There is an amazing book ["Who's #1"](https://www.amazon.com/Whos-1-Science-Rating-Ranking/dp/069116231X) by Langville and Meyer which describes several ideas in great detail.
+- Although there are some CRAN packages dedicated specifically to ranking methods (for example, [elo](https://CRAN.R-project.org/package=elo), [mvglmmRank](https://CRAN.R-project.org/package=mvglmmRank)), I didn't find them to be [tidy](https://cran.r-project.org/web/packages/tidyverse/vignettes/manifesto.html) enough.
+
+These discoveries motivated me to write my first ever CRAN package. Things didn't turn out the way I was planning, and now `comperank` is actually my fourth. After spending some time writing it I realized that most of the package will be about storing and manipulating competition results in consistent ways. That is how [comperes](https://echasnovski.github.io/comperes/) was born.
+
+After diverging into creating this site and writing [ruler](https://echasnovski.github.io/ruler/) in pair with [keyholder](https://echasnovski.github.io/keyholder/), a few months ago I returned to competition results and rankings. Gained experience helped me to improve functional API of both packages which eventually resulted into submitting them to CRAN.
+
+# Overview
+
+This post, as [one of the previous ones](`r blogdown::shortcode(.name = "relref", '\"2018-05-09-harry-potter-and-competition-results-with-comperes.html\"', .type = "html")`), has two goals:
+
+- Explore different types of rankings on [Harry Potter Books Survey](`r blogdown::shortcode(.name = "relref", '\"2018-04-09-struggle-with-harry-potter-data.html\"', .type = "html")`) results (data provided by `comperes`).
+- Demonstrate basic functionality of `comperank` package. To learn more go to its [README](https://echasnovski.github.io/comperank/index.html), [vignettes](https://echasnovski.github.io/comperank/articles/) and [manual pages](https://echasnovski.github.io/comperank/reference/index.html).
+
+We will cover the following topics:
+
+- Short notes about __functionality of comperank__.
+- __Exploration ranking__ with ranking based on mean book score. No `comperank` package functionality is required.
+- __Rankings with fixed Head-to-Head structure__. This will cover Massey and Colley ranking methods.
+- __Rankings with variable Head-to-Head structure__. This will cover Keener, Markov and Offense-Defense ranking methods.
+- __Combined rankings__ in which average ranks will be computed using all described `comperank` methods.
+
+Another very interesting set of ranking methods implemented in `comperank` are methods with iterative nature. However, their usage with mentioned [Harry Potter Books Survey dataset](https://echasnovski.github.io/comperes/reference/hp_survey.html) is meaningless as temporal ordering of games (acts of book scoring by one person) should make sense, which it doesn't.
+
+The idea behind converting survey results into competition results is described in aforementioned post. We will need the following setup:
+
+```{r library, message = FALSE}
+library(dplyr)
+library(purrr)
+library(rlang)
+
+# This will automatically load {comperes}
+library(comperank)
+
+# Create competition results from hp_survey
+hp_cr <- hp_survey %>%
+  transmute(
+    game = person, player = book,
+    score = as.integer(gsub("[^0-9].*$", "", score))
+  ) %>%
+  as_longcr()
+```
+
+# Functionality of comperank
+
+__Rating__ is considered to be a list (in the ordinary sense) of numerical values, one for each player, or the numerical value itself. Its interpretation depends on rating method: either bigger value indicates better player performance or otherwise.
+
+__Ranking__ is considered to be a rank-ordered list (in the ordinary sense) of players: rank 1 indicates player with best performance.
+
+`comperank` leverages the [tidyverse](https://www.tidyverse.org/) ecosystem of R packages. Among other things, it means that the main output format is [tibble](http://tibble.tidyverse.org/).
+
+There are three sets of functions:
+
+- `rate_*()` (`*` stands for ranking method short name). Its output is a tibble with columns `player` (player identifier) and at least one `rating_*` (rating value). Names of rating columns depend on rating method.
+- `rank_*()`. Its default output is similar to previous one, but with `ranking_*` instead of rating columns. It runs `rate_*()` and does ranking with correct direction. One can use option `keep_rating = TRUE` to keep rating columns in the output.
+- `add_*_ratings()`. These functions are present only for algorithms with iterative nature and competition results with games only between two players. They return tibble with row corresponding to a game and extra columns indicating ratings of players before and after the game.
+
+# Exploration ranking
+
+Previously we established that "Harry Potter and the Prisoner of Azkaban" seems to be "the best" book and "Harry Potter and the Chamber of Secrets" comes last. This was evaluated by mean score:
+
+```{r exploration-ranking}
+hp_rank_explore <- hp_cr %>%
+  summarise_player(rating_explore = mean(score)) %>%
+  # round_rank() is a function from {comperank} package for doing ranking
+  mutate(ranking_explore = round_rank(rating_explore))
+hp_rank_explore
+```
+
+As simple as it is, this approach might leave some available information unused. Survey originally was designed to obtain information not only about books performance as separate objects, but also to learn about possible pair relationships between them. Maybe some book is considered generally "not the best" but it "outperforms" some other "better" book. This was partially studied in "Harry Potter and competition results with comperes" by computing different Head-to-Head values and manually studying them.
+
+Here we will attempt to summarise books performance based on their Head-to-Head relationships.
+
+# Rankings with fixed H2H structure
+
+In `comperank` there are two methods which operate on fixed Head-to-Head structure: __Massey__ and __Colley__. Both of them are designed for competitions where:
+
+- Games are held only between two players.
+- It is assumed that score is numeric and higher values indicate better player performance in a game.
+
+Being very upset for moment, we realize that in dataset under study there are games with different number of players. Fortunately, `comperes` package comes to rescue: it has function [to_pairgames()](https://echasnovski.github.io/comperes/reference/pairgames.html) just for this situation. It takes competition results as input and returns completely another (strictly speaking) competition results where "crowded" games are split into small ones. More strictly, games with one player are removed and games with three and more players are converted to multiple games between all unordered pairs of players. The result is in [wide](https://echasnovski.github.io/comperes/reference/widecr.html) format (as opposed to [long](https://echasnovski.github.io/comperes/reference/longcr.html) one of `hp_cr`):
+
+```{r hp_pairgames}
+hp_cr_paired <- to_pairgames(hp_cr)
+
+# For example, second game was converted to a set of 10 games
+hp_cr %>% filter(game == 2)
+
+hp_cr_paired %>% slice(2:11) 
+```
+
+## Massey method
+
+Idea of Massey method is that difference in ratings should be proportional to score difference in direct confrontations. Bigger value indicates better player competition performance.
+
+```{r massey}
+hp_cr_massey <- hp_cr_paired %>% rank_massey(keep_rating = TRUE)
+hp_cr_massey
+```
+
+## Colley method
+
+Idea of Colley method is that ratings should be proportional to share of player's won games. Bigger value indicates better player performance.
+
+```{r colley}
+hp_cr_colley <- hp_cr_paired %>% rank_colley(keep_rating = TRUE)
+hp_cr_colley
+```
+
+Both Massey and Colley give the same result differing from Exploration ranking in treating "HP_5" ("Order of the Phoenix") and "HP_7" ("Deathly Hallows") differently: "HP_5" moved up from 6-th to 4-th place.
+
+# Rankings with variable H2H structure
+
+All algorithms with variable Head-to-Head structure depend on user supplying custom Head-to-Head expression for computing quality of direct confrontations between all pairs of players of interest.
+
+There is much freedom in choosing Head-to-Head structure appropriate for ranking. For example, it can be "number of wins plus half the number of ties" (implemented in `h2h_funs[["num_wins2"]]` from `comperes`) or "mean score difference from direct matchups" (`h2h_funs[["mean_score_diff"]]`). In this post we will use the latter one. Corresponding Head-to-Head matrix looks like this:
+
+```{r hp-h2h}
+hp_h2h <- hp_cr %>%
+  h2h_mat(!!! h2h_funs[["mean_score_diff"]]) %>%
+  round(digits = 2)
+
+# Value indicates mean score difference between "row-player" and
+# "column-player". Positive - "row-player" is better.
+hp_h2h
+```
+
+## Keener method
+
+Keener method is based on the idea of "relative strength" - the strength of the player relative to the strength of the players he/she has played against. This is computed based on provided Head-to-Head values and some flexible algorithmic adjustments to make method more robust. Bigger value indicates better player performance.
+
+```{r keener}
+hp_cr_keener <- hp_cr %>%
+  rank_keener(!!! h2h_funs["mean_score_diff"], keep_rating = TRUE)
+hp_cr_keener
+```
+
+Results for Keener method again raised "HP_5" one step up to third place.
+
+## Markov method
+
+The main idea of Markov method is that players "vote" for other players' performance. Voting is done with Head-to-Head values and the more value the more "votes" gives player2 ("column-player") to player1 ("row-player"). For example, if Head-to-Head value is "number of wins" then player2 "votes" for player1 proportionally to number of times player1 won in a matchup with player2.
+
+Actual "voting" is done in [Markov chain](https://en.wikipedia.org/wiki/Markov_chain) fashion: Head-to-Head values are organized in stochastic matrix which vector of stationary probabilities is declared to be output ratings. Bigger value indicates better player performance.
+
+```{r markov}
+hp_cr_markov <- hp_cr %>%
+  rank_markov(!!! h2h_funs["mean_score_diff"], keep_rating = TRUE)
+hp_cr_markov
+```
+
+We can see that Markov method put "HP_4" ("Goblet of Fire") on second place. This is due to its reasonably good performance against the leader "HP_3" ("Prisoner of Azkaban"): mean score difference is only `r abs(hp_h2h["HP_3", "HP_4"])` in "HP_3" favour. Doing well against the leader in Markov method has a great impact on output ranking, which somewhat resonates with common sense.
+
+## Offense-Defense method
+
+The idea of Offense-Defense (OD) method is to account for different abilities of players by combining different ratings:
+
+- For player which can achieve _high_ Head-to-Head value (even against the player with strong defense) it is said that he/she has __strong offense__ which results into _high_ offensive rating.
+- For player which can force their opponents into achieving _low_ Head-to-Head value (even if they have strong offense) it is said that he/she has __strong defense__ which results into _low_ defensive rating.
+
+Offensive and defensive ratings describe different skills of players. In order to fully rate players, OD ratings are computed: offensive ratings divided by defensive. The more OD rating the better player performance.
+
+```{r offense-defense}
+hp_cr_od <- hp_cr %>%
+  rank_od(!!! h2h_funs["mean_score_diff"], keep_rating = TRUE)
+print(hp_cr_od, width = Inf)
+```
+
+All methods give almost equal results again differing only in ranks of "HP_5" and "HP_7".
+
+# Combined rankings
+
+To obtain averaged, and hopefully less "noisy", rankings we will combine rankings produced with `comperank` by computing their mean.
+
+```{r combined}
+list(hp_cr_massey, hp_cr_colley, hp_cr_keener, hp_cr_markov, hp_cr_od) %>%
+  # Extract ranking column
+  map(. %>% select(., player, starts_with("ranking"))) %>%
+  # Join all ranking data in one tibble
+  reduce(left_join, by = "player") %>%
+  # Compute mean ranking
+  transmute(player, ranking_combined = rowMeans(select(., -player))) %>%
+  # Join exploration rankings for easy comparison
+  left_join(y = hp_rank_explore %>% select(-rating_explore), by = "player")
+```
+
+As we can see, although different ranking methods handle results differently for books with "middle performance", combined rankings are only slightly different from exploration ones. Only notable difference is in switched rankings of "Order of the Phoenix" and "Deathly Hallows".
+
+# Conclusion
+
+- "Harry Potter and the Prisoner of Azkaban" still seems to be considered "best" among R users. And yet "Harry Potter and the Chamber of Secrets" still suffers the opposite fate.
+- Using different ranking methods is a powerful tool in analyzing Head-to-Head performance. This can be done in very straightforward manner with new addition to CRAN - [comperank](https://github.com/echasnovski/comperank) package.
+
+`r blogdown::shortcode("spoiler", id = '\"sessionInfo\"', title = '\"sessionInfo()\"')`
+
+```{r sessionInfo, eval = TRUE}
+sessionInfo()
+```
+
+`r blogdown::shortcode("/spoiler")`
