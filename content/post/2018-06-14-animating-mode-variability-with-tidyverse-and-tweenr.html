@@ -1,0 +1,614 @@
+---
+title: Animating mode variability with tidyverse and tweenr
+author: Evgeni Chasnovski
+date: '2018-06-14'
+publishDate: '2018-06-14'
+slug: animating-mode-variability-with-tidyverse-and-tweenr
+categories: []
+tags:
+  - rstats
+  - tidyverse
+  - tweenr
+description: 'Provided different probability distributions, animate independent sample distributions to demonstrate mode variability. There is a thorough code description with some subtle tips and tricks.'
+---
+
+
+
+<div id="prologue" class="section level1">
+<h1>Prologue</h1>
+<p>Not so long time ago I encountered the following task: given several groups of samples (one group - several samples from one distribution) make a visual presentation of <a href="https://en.wikipedia.org/wiki/Mode_(statistics)#Mode_of_a_sample">sample mode</a> variability in different groups (how sample mode changes between different samples). I decided to do this by animating these distributions with respect to their mode. The whole process can be summarised as follows:</p>
+<ul>
+<li><strong>For every sample</strong>:
+<ul>
+<li><strong>Count its values</strong>. Sample values are considered to a certain degree of precision, e.g. to the third digit, so talking about “counting values” has reasonable background.</li>
+<li><strong>Divide counts by maximum count</strong>. The output is named “mode share distribution” (made up term, didn’t find any present one). For every unique value in sample the outcome is a number between 0 (value is totally absent) and 1 (value is a strict mode). Here value is considered to be “mode” if its “mode share” is above some threshold, say 0.9. For strict thresholds 1 is used.</li>
+</ul></li>
+<li>For every set of group samples (first samples within groups, second samples, and so on) <strong>plot their “mode share distribution”</strong>. This is done by plotting several “mode share distributions” at once, in non-overlapping <a href="https://cran.r-project.org/web/packages/ggridges/index.html">ridgeline-like</a> fashion.</li>
+<li><strong>Animate between plots</strong>. This simultaneously shows a mode variability in different groups. As just changing pictures didn’t seem like a challenge, I decided to make smooth transitions between plots. Packages <a href="https://cran.r-project.org/web/packages/tweenr/tweenr.pdf">tweenr</a> (CRAN version) and <a href="https://github.com/dgrtwo/gganimate">gganimate</a> (original one by David Robinson, not a <a href="https://twitter.com/thomasp85/status/1004068316611260416">soon-to-be-revolutional one</a> by Thomas Lin Pedersen) provide core functionality for this.</li>
+</ul>
+<p>Methods I ended up using (some of them were discovered during solving this task) contain surprisingly many subtle <em>base R</em> and <em>tidyverse</em> tricks. This motivated me to write a post about my solution. It heavily uses core <a href="https://www.tidyverse.org/">tidyverse</a> packages.</p>
+<p>For educational purposes, I will slightly change the task: <strong>provided different probability distributions (by random generation R functions like <code>rnorm</code>), animate independent sample distributions to demonstrate mode variability</strong>.</p>
+</div>
+<div id="overview" class="section level1">
+<h1>Overview</h1>
+<p>The main point of this post is to provide a thorough code description with some highlighted tips and tricks. Considering this, the most information will be provided in code comments with some tricks described in text. I can see that provided solutions might be slightly overcomplicated but they seem to demonstrate stable behavior. <strong>Please note</strong> that this post, probably, won’t be that helpful for beginners in R, and some confident knowledge of R and tidyverse tools is needed.</p>
+<p>Most of the code will be hidden under spoilers (text which appears after clicking on its summary, usually beginning with “Code for …”) to shrink initial post size, but I really encourage you to read them. However, only looking at plots and animations is, of course, completely fine :) They are considered to be a valuable by-product.</p>
+<p>This post is organized as follows:</p>
+<ul>
+<li><strong>Data generation</strong> describes the process of creating new samples from given random generators.</li>
+<li><strong>Static plots</strong> describes the format of plotting data and a process of building a plot. There are also some example plots.</li>
+<li><strong>Animation</strong> describes the logic behind transition between different plots and the process of creating animations. There are also some example animations.</li>
+<li><strong>Bonus accidental art</strong> has an example of “accidental art” which was produced unintentionally but has an interesting look.</li>
+<li><strong>Conclusion</strong> lists some lessons learned and some of my favorite tricks from this post.</li>
+</ul>
+<p>We will need the following setup:</p>
+{{% spoiler_details summary="Code for setup" %}}
+<pre class="r"><code># Used tidyverse packages
+suppressPackageStartupMessages(library(dplyr))
+library(tidyr)
+library(purrr)
+library(ggplot2)
+
+# Using current CRAN version 0.1.5
+library(tweenr)
+
+# Using current github &#39;dgrtwo/gganimate&#39; version 0.1.0.9000 (commit bf82002)
+library(gganimate)
+
+theme_set(theme_bw())
+
+animation::ani.options(interval = 1/24)
+
+# Very important step for reproducibility
+set.seed(20180614)
+
+# Data about distributions of interest and sample size
+r_funs &lt;- list(
+  # Using `purrr::partial()` to create functions that expect only `n` argument
+  &quot;runif&quot; = partial(runif),
+  &quot;rnorm&quot; = partial(rnorm, mean = 0.5, sd = 0.25),
+  &quot;rbeta&quot; = partial(rbeta, shape1 = 5, shape2 = 1)
+)
+n_sample &lt;- 1000</code></pre>
+{{% /spoiler_details %}}
+</div>
+<div id="data-generation" class="section level1">
+<h1>Data generation</h1>
+{{% spoiler_details summary="Code for data generation" %}}
+<pre class="r"><code># Generate data by sampling from different distributions
+# Note that all elements of `r_fun_list` should have names, which will be used
+  # as distribution names.
+# Elements of `r_fun_list` should be functions which take only one argument `n`
+  # for a sample size to be generated. Use `purrr::partial` to create those.
+generate_data &lt;- function(r_fun_list, n_sample) {
+  pmap_dfr(
+    list(names(r_fun_list), r_fun_list, n_sample),
+    # Interestingly, due to implementation of anonymous formula functions, you
+      # can&#39;t use `..i` placeholders if they represent functions to be called.
+    ~ tibble(distr = .x, value = .y(n = ..3))
+  )
+}</code></pre>
+{{% /spoiler_details %}}
+<p>Considering future parallel animation, I decided to organize data “per plot”. That is: one <a href="http://tibble.tidyverse.org/">tibble</a> contains information about one sample for every distribution and multiple samples should be stored in list. Function <code>generate_data()</code> creates one tibble, which in combination with <code>purrr::rerun()</code> can create a list of grouped samples. <strong>Note</strong> that, for reasonable results, numbers in <code>value</code> columns should be rounded.</p>
+<pre class="r"><code>sample_data &lt;- rerun(10, generate_data(r_funs, n_sample))
+
+# One set of samples for examples
+distr_data &lt;- sample_data[[1]] %&gt;% mutate(value = round(value, 2))
+distr_data
+## # A tibble: 3,000 x 2
+##   distr value
+##   &lt;chr&gt; &lt;dbl&gt;
+## 1 runif  0.46
+## 2 runif  0.51
+## 3 runif  0.47
+## 4 runif  0.47
+## 5 runif  0.4 
+## # ... with 2,995 more rows</code></pre>
+<p>Tips and tricks:</p>
+<ul>
+<li><em><code>purrr::pmap_dfr()</code> helps create a data frame output after iterating in parallel over multiple vectors</em>. As all <code>purrr</code> mappers, function can be concisely described in formula fashion addressing arguments with <code>..1</code>, <code>..2</code> and so on. However, due to internal logic of <code>purrr</code>, using <code>..i</code> notation is impossible if it is meant as function to be applied. Fortunately, instead of <code>..1</code> one can use <code>.x</code> or <code>.</code> and instead of <code>..2</code> - <code>.y</code>, which works.</li>
+</ul>
+</div>
+<div id="static-plots" class="section level1">
+<h1>Static plots</h1>
+<p>The general idea is to <strong>transform initial tibble into tibble with columns describing future plot</strong> which, essentially, will be <strong>sets (per distribution) of vertical segments</strong>. In this way, modifying pipeline from static plotting into smooth animation will be a matter of creating transitions between different plotting data (with use of <code>tweenr::tween_state()</code>) and animating them.</p>
+<div id="plotting-data" class="section level2">
+<h2>Plotting data</h2>
+{{% spoiler_details summary="Code for computing plotting data" %}}
+<pre class="r"><code># Compute data for plot. Basically, it:
+  # - Counts values in each group.
+  # - Normalizes by maximum count within each group (producing &#39;mode shares&#39;).
+  # - Computes whether certain value is mode according to rule &quot;`mode share` is
+    # note less then `mode_thres`&quot;.
+  # - Produces plotting data (including colour and size of segments).
+# Here `tbl` should have &#39;distr&#39; and &#39;value&#39; columns.
+# `mode_thres` represents minimum &#39;mode share&#39; for value to be considered mode.
+get_plot_data &lt;- function(tbl, mode_thres = 1) {
+  tbl %&gt;%
+    # Compute mode share distribution by counting value occurence in groups and
+      # normalize by maximum count within groups.
+    group_by(distr, value) %&gt;%
+    summarise(n = n()) %&gt;%
+    mutate(
+      modeShare = n / max(n),
+      isMode = modeShare &gt;= mode_thres
+    ) %&gt;%
+    ungroup() %&gt;%
+    # Prepare plot data
+    transmute(
+      distr, x = value,
+      # Distributions are plotted on integer levels of groups.
+      # Using factor &#39;distr&#39; column is a way to control vertical order of
+        # distributions.
+      y = as.integer(as.factor(distr)),
+      # Here using 0.9 ensures that segments won&#39;t overlap
+      yend = y + modeShare * 0.9,
+      isMode,
+      colour = if_else(isMode, &quot;red&quot;, &quot;black&quot;),
+      size = if_else(isMode, 2, 1)
+    )
+}</code></pre>
+{{% /spoiler_details %}}
+<p>Function <code>get_plot_data()</code> takes tibble of samples and mode threshold (minimum ‘mode share’ for value to be considered mode). It produces output with one row per segment in the following format:</p>
+<ul>
+<li><strong>distr</strong> &lt;same type as in input&gt; : Name of distribution. Will be used as labels.</li>
+<li><strong>x</strong> &lt;dbl&gt; : Coordinates of segment x axis (which is enough to define x coordinate of vertical segments).</li>
+<li><strong>y</strong> &lt;dbl&gt; : The y coordinate of lower end of a segment. To control this, supply factor <code>distr</code> column: different distributions will be plotted at integer y coordinates in order defined by factor levels (from bottom to top).</li>
+<li><strong>yend</strong> &lt;dbl&gt; : The y coordinate of upper end of a segment.</li>
+<li><strong>isMode</strong> &lt;lgl&gt; : Logical value indicating whether this segment represents mode value.</li>
+<li><strong>colour</strong> &lt;chr&gt; : Colour of the segment (red for modes, black for others).</li>
+<li><strong>size</strong> &lt;dbl&gt; : Size of the segment line (2 for modes, 1 for others).</li>
+</ul>
+<pre class="r"><code>get_plot_data(distr_data)
+## # A tibble: 297 x 7
+##   distr     x     y  yend isMode colour  size
+##   &lt;chr&gt; &lt;dbl&gt; &lt;int&gt; &lt;dbl&gt; &lt;lgl&gt;  &lt;chr&gt;  &lt;dbl&gt;
+## 1 rbeta 0.19      1  1.02 FALSE  black      1
+## 2 rbeta 0.28      1  1.02 FALSE  black      1
+## 3 rbeta 0.290     1  1.02 FALSE  black      1
+## 4 rbeta 0.32      1  1.02 FALSE  black      1
+## 5 rbeta 0.33      1  1.02 FALSE  black      1
+## # ... with 292 more rows
+get_plot_data(distr_data, mode_thres = 0.01)
+## # A tibble: 297 x 7
+##   distr     x     y  yend isMode colour  size
+##   &lt;chr&gt; &lt;dbl&gt; &lt;int&gt; &lt;dbl&gt; &lt;lgl&gt;  &lt;chr&gt;  &lt;dbl&gt;
+## 1 rbeta 0.19      1  1.02 TRUE   red        2
+## 2 rbeta 0.28      1  1.02 TRUE   red        2
+## 3 rbeta 0.290     1  1.02 TRUE   red        2
+## 4 rbeta 0.32      1  1.02 TRUE   red        2
+## 5 rbeta 0.33      1  1.02 TRUE   red        2
+## # ... with 292 more rows
+distr_data %&gt;%
+  mutate(distr = factor(distr, levels = c(&quot;runif&quot;, &quot;rnorm&quot;, &quot;rbeta&quot;))) %&gt;%
+  get_plot_data()
+## # A tibble: 297 x 7
+##   distr     x     y  yend isMode colour  size
+##   &lt;fct&gt; &lt;dbl&gt; &lt;int&gt; &lt;dbl&gt; &lt;lgl&gt;  &lt;chr&gt;  &lt;dbl&gt;
+## 1 runif  0        1  1.28 FALSE  black      1
+## 2 runif  0.01     1  1.39 FALSE  black      1
+## 3 runif  0.02     1  1.51 FALSE  black      1
+## 4 runif  0.03     1  1.51 FALSE  black      1
+## 5 runif  0.04     1  1.45 FALSE  black      1
+## # ... with 292 more rows</code></pre>
+<p>Tips and tricks:</p>
+<ul>
+<li><em>While plotting several distributions organized vertically, one can compute the base y coordinate for them with <code>as.integer(as.factor(distr))</code></em>. Using factor <code>distr</code> column is a way to control vertical order of distributions.</li>
+</ul>
+</div>
+<div id="creating-plots" class="section level2">
+<h2>Creating plots</h2>
+{{% spoiler_details summary="Code for creating static plots" %}}
+<pre class="r"><code># Adds segment layers. May be used in both static and animated plots.
+  # In static plots should be preceded by `ggplot(data)` in which `data` should
+    # have column `.frame` with all 1.
+  # In animated plots should be preceded by
+    # `ggplot(data_tweened, aes(frame = .frame))`.
+# Returns a list with results of `ggplot2` constructor functions. Elements will
+  # be used sequentially to build plot. This list should be added to `ggplot()`
+  # call with `+` function (like other `ggplot2` functionality).
+add_layers &lt;- function() {
+  common_aes &lt;- aes(x = x, xend = x, y = y, yend = yend,
+                    colour = colour, size = size)
+  list(
+    # Plotting segments in two different layers to highlight mode segments.
+    geom_segment(
+      # Value of `data` argument in layer function can be a function! It will be
+        # applied to present data initialized in `ggplot()` call.
+      # Notation `. %&gt;% ...` creates a functional sequence.
+      data = . %&gt;% filter(!isMode), mapping = common_aes
+    ),
+    geom_segment(data = . %&gt;% filter(isMode), mapping = common_aes),
+    # Explicitly label distributions.
+    geom_label(
+      data = . %&gt;%
+        # Compute all possible labels in case of factor `distr`
+        distinct(.frame, distr) %&gt;%
+        complete(.frame, distr) %&gt;%
+        # Position label on the left side and in the middle of the group plot
+        mutate(x = -Inf, y = as.integer(as.factor(distr)) + 0.5),
+      mapping = aes(x = x, y = y, label = distr),
+      size = 5, hjust = -0.1
+    ),
+    # Tweak axes labels
+    scale_x_continuous(name = NULL),
+    scale_y_continuous(
+      name = NULL, labels = NULL, breaks = NULL, minor_breaks = NULL
+    ),
+    scale_colour_identity(),
+    scale_size_identity(),
+    # Manually fix plot range for x axis to (0, 1).
+    coord_cartesian(xlim = c(0, 1)),
+    # Add common subtitle to describe plot. Wrap `labs()` in `list()` as
+      # `labs()` itself returns a list which will be appended in a wrong way.
+    list(labs(
+      subtitle = paste0(
+        c(&quot;Rows represent counts of samples from different distributions.&quot;,
+          &quot;Actual counts are normalized by maximum count to plot mode share.&quot;,
+          &quot;Modes (in red) are values with mode share above some threshold.&quot;),
+        collapse = &quot;\n&quot;
+      )
+    ))
+  )
+}
+
+# Wrapper for constructing static plot
+make_static_plot &lt;- function(plot_data, title = NULL) {
+  plot_data %&gt;%
+    mutate(.frame = 1) %&gt;%
+    ggplot() +
+      add_layers() +
+      labs(title = title)
+}</code></pre>
+{{% /spoiler_details %}}
+<p>Function <code>make_static_plot()</code> expects plot data (as output of <code>get_plot_data()</code>) and title of the plot. It returns a ggplot object with many segments and zooming into (0, 1) in x-axis.</p>
+<p>Tips and tricks:</p>
+<ul>
+<li>For effective code reuse while “ggplotting”, <em>one can create custom function <code>custom_fun()</code> which should return a list with results of <a href="http://ggplot2.tidyverse.org/">ggplot2</a> constructor functions</em>. Usually, they are geoms but can be scales, theme elements and so on. This function can then be used as function layer with <code>ggplot(data) + custom_fun()</code>.</li>
+<li><em>Value of <code>data</code> argument in layer function can be a function!</em> This one I discovered during solving this task and was pleasantly surprised by this functionality. A function will be applied to present data initialized in <code>ggplot()</code> call. It is very useful when one needs to plot object for one subset of data over the other. A handy way to create those functions are with <code>. %&gt;% ...</code> notation which creates a functional sequence (one of the features of <a href="http://magrittr.tidyverse.org/reference/pipe.html">magrittr pipe</a>). Here this trick is used to plot segments for mode values over the other segments.</li>
+</ul>
+</div>
+<div id="example-plots" class="section level2">
+<h2>Example plots</h2>
+<pre class="r"><code>distr_data %&gt;%
+  get_plot_data() %&gt;%
+  make_static_plot(
+    title = &quot;Mode share distributions for samples rounded to 2 digits&quot;
+  )</code></pre>
+<p><img src="/post/2018-06-14-animating-mode-variability-with-tidyverse-and-tweenr_files/figure-html/example%20plots-1.png" width="864" /></p>
+<pre class="r"><code>
+distr_data %&gt;%
+  get_plot_data(mode_thres = 0.8) %&gt;%
+  make_static_plot(
+    title = paste0(
+      c(&quot;Mode share distributions for samples rounded to 2 digits.&quot;,
+        &quot;Relaxed definition of mode&quot;),
+      collapse = &quot; &quot;
+    )
+  )</code></pre>
+<p><img src="/post/2018-06-14-animating-mode-variability-with-tidyverse-and-tweenr_files/figure-html/example%20plots-2.png" width="864" /></p>
+<pre class="r"><code>
+distr_data %&gt;%
+  mutate(distr = factor(distr, levels = c(&quot;rnorm&quot;, &quot;runif&quot;, &quot;rbeta&quot;))) %&gt;%
+  get_plot_data() %&gt;%
+  make_static_plot(
+    title = &quot;Control order of distributions with factor `distr` column&quot;
+  )</code></pre>
+<p><img src="/post/2018-06-14-animating-mode-variability-with-tidyverse-and-tweenr_files/figure-html/example%20plots-3.png" width="864" /></p>
+</div>
+</div>
+<div id="animations" class="section level1">
+<h1>Animations</h1>
+<p>The general idea behind animations is to take a list of state plotting data and compute transitions between them: multiple <strong>valid</strong> plotting data for transition states between consecutive state plotting data. All “transition plotting data” will be plotted consecutively. The output sequence of plots will be animated with relatively high speed to produce smooth animation.</p>
+<div id="transitions" class="section level2">
+<h2>Transitions</h2>
+{{% spoiler_details summary="Code for creating transitions" %}}
+<pre class="r"><code># Analogous to `findInterval()` but:
+  # - Returns not the index of &quot;left&quot; `vec` element of interval but index of
+    # nearest element between two.
+  # - `vec` can be unordered.
+find_nearest_ind &lt;- function(x, vec) {
+  if (length(vec) == 1) {
+    return(rep(1, length(x)))
+  }
+  
+  # Produce sorted vector and use `findInterval` on it
+  vec_order &lt;- order(vec)
+  vec_sorted &lt;- vec[vec_order]
+  x_ind &lt;- findInterval(x, vec_sorted, all.inside = TRUE)
+  
+  # Modify interval index by possibly adding 1 if right interval end is nearer.
+  x_nearest &lt;- x_ind + (vec_sorted[x_ind + 1] - x &lt; x - vec_sorted[x_ind])
+  
+  vec_order[x_nearest]
+}
+
+# Completely match x to y
+# It computes:
+  # - Index of the nearest `y` value to `x` value for every index of `x`.
+  # - Similar data, but index of nearest `x` value to `y` values that were not
+    # chosen as nearest ones in the previous step.
+# Output is a tibble with &#39;from&#39; and &#39;to&#39; columns. In column &#39;from&#39; all indices
+  # of `x` are present and in &#39;to&#39; - all indices of `y` are present.
+match_nearest &lt;- function(x, y) {
+  matching_x &lt;- find_nearest_ind(x, y)
+  rest_y &lt;- setdiff(seq_along(y), matching_x)
+  
+  if (length(rest_y) &gt; 0) {
+    matching_rest_y &lt;- find_nearest_ind(y[rest_y], x)
+    
+    tibble(
+      from = c(seq_along(x), matching_rest_y),
+      to   = c(matching_x,   rest_y)
+    )
+  } else {
+    tibble(from = seq_along(x), to = matching_x)
+  }
+}
+
+# Return modified second argument with zero height segments in case first
+  # argument is `NULL`.
+# This function is essential for aesthetically pleasing animation in case of
+  # different distribution sets. Should be used in conjunction with
+  # `dplyr::full_join()`.
+coalesce_segments &lt;- function(subject, reference) {
+  if (is.null(subject)) {
+    reference %&gt;% mutate(yend = y)
+  } else {
+    subject
+  }
+}
+
+# Prepare data for `tweenr::tween_states()`
+# `plot_data_from` and `plot_data_to` represent `get_plot_data()` outputs of
+  # two tables which plots should be animated one into another.
+# The idea is to ensure that every segment in both &quot;from&quot; and &quot;to&quot; data
+  # actively takes part in transition and not just pops up in the end.
+  # This is achieved by doing complete match within every distribution of
+  # segments in &quot;from&quot; and &quot;to&quot; plot data sets.
+transition_nearest_value &lt;- function(plot_data_from, plot_data_to) {
+  nested_from &lt;- plot_data_from %&gt;% nest(-distr, .key = &quot;dataFrom&quot;)
+  nested_to &lt;- plot_data_to %&gt;% nest(-distr, .key = &quot;dataTo&quot;)
+  
+  nested_transitions &lt;- nested_from %&gt;%
+    # Join two tables with plot data by distribution.
+    # Note the use of `full_join()` which enables animating data with different
+      # sets of distributions.
+    full_join(y = nested_to, by = &quot;distr&quot;) %&gt;%
+    # Modify possibly missing distributions to appear &quot;from the ground&quot;.
+    mutate(
+      dataFrom = map2(dataFrom, dataTo, coalesce_segments),
+      dataTo = map2(dataTo, dataFrom, coalesce_segments)
+    ) %&gt;%
+    # Compute matching by nearest x value
+    mutate(
+      matching = map2(dataFrom, dataTo, ~ match_nearest(.x[[&quot;x&quot;]], .y[[&quot;x&quot;]])),
+      transitionFrom = map2(dataFrom, matching, ~ .x[.y[[&quot;from&quot;]], ]),
+      transitionTo = map2(dataTo, matching, ~ .x[.y[[&quot;to&quot;]], ])
+    )
+  
+  # Return a list with pair of tibbles where corresponding pairs of rows
+    # represent segements to be transfromed one into another.
+  list(
+    from = nested_transitions %&gt;% unnest(transitionFrom),
+    to = nested_transitions %&gt;% unnest(transitionTo)
+  )
+}</code></pre>
+{{% /spoiler_details %}}
+<p>The <code>tweenr</code> function for producing transition between states is <code>tween_states()</code>. Its core input is a list of data frames where all elements must contain the same number of rows. Every row describes parameters of the certain plotting object which will be transformed between present states.</p>
+<p>As our states consist from essentially different objects, we will operate on pairs of consecutive states. It is our duty to match pairs of objects that will be transformed one into another. Basically, it means to <strong>say for every segment into/from which other segment it will transformed</strong>. Outline of proposed transition algorithm of <code>plot_data_from</code> into <code>plot_data_to</code> is as follows:</p>
+<ul>
+<li><strong>Match distribution types from both data sets</strong>. This is done with <code>full_join()</code> from <code>dplyr</code> in combination with <code>nest()</code> from <code>tidyr</code>. Using this type of join function is essential: it enables creating transition for pair of plot data with different sets of distributions (which is an overkill but a rather cool feature gained with little effort). If in pair plot data there is no matching distribution, the result will be <code>NULL</code>.</li>
+<li><strong>Do matching between same distributions</strong>:
+<ul>
+<li>If any plot data is <code>NULL</code> (using <code>full_join()</code> should ensure that there is maximum one <code>NULL</code>) copy pair plotting data and modify column <strong>yend</strong> to equal <strong>y</strong>. This models “raising” segments “from the ground” of respective distribution.</li>
+<li>If both plot data are not <code>NULL</code> match every “from-row” with the “to-row” by nearest <code>x</code> coordinate (represents sample value). To ensure that no segment “pops out of nowhere”, do similar process in reverse: for every “to-row” that wasn’t matched in previous step.</li>
+</ul></li>
+</ul>
+<p>Tips and tricks:</p>
+<ul>
+<li><em>Index of the nearest reference point can be found by a slight modification of <code>findInterval()</code></em>. After computing <code>x_ind</code> with <code>findInterval(x, vec, all.inside = TRUE)</code> (here <code>vec</code> should be sorted increasingly), modify the result with <code>x_ind + (vec_sorted[x_ind + 1] - x &lt; x - vec_sorted[x_ind])</code>. This adds 1 (<code>TRUE</code> converted to numeric value) in case right end of interval is closer than left one.</li>
+<li><em>Using <code>full_join()</code> can be very helpful in situation with different sets of groups</em>. It enables later repairing of unmatched data.</li>
+</ul>
+</div>
+<div id="creating-animations" class="section level2">
+<h2>Creating animations</h2>
+{{% spoiler_details summary="Code for creating animation" %}}
+<pre class="r"><code># Tween consecutive plot data sets to be transformed one into another
+# The output will be data for cycled animation: last plot will be transformed
+  # into the first one.
+tween_cycled &lt;- function(plot_data_list, tweenlength = 2, statelength = 2,
+                         ease = &quot;linear&quot;, nframes = 24) {
+  states &lt;- c(plot_data_list, plot_data_list[1])
+  
+  # As in result of every `tweenr::tween_states()` call column `.frame` starts
+    # from 1, it is needed to offset frames for every pair.
+  frame_offset &lt;- (seq_along(plot_data_list) - 1) * nframes
+  
+  map2(states[-length(states)], states[-1], transition_nearest_value) %&gt;%
+    map2_dfr(
+      frame_offset,
+      function(pair_tbls, f_offset) {
+        pair_mod &lt;- pair_tbls %&gt;%
+          # Converting column `distr` to factor is needed to avoid
+            # &#39;Error in col2rgb(d)&#39; with not correct colour name.
+          # This is due to not optimal treatment of character columns in current
+            # CRAN version of `tweenr`.
+            # This seems to be solved in dev. version at &#39;thomasp85/tweenr&#39;.
+            # However, for now it is rather unstable.
+          # Fortunately, converting to factor should give expected results as in
+            # `transition_nearest_value()` it is ensured common value set and
+            # order of their appearence by using `full_join()`.
+          map(. %&gt;% mutate(distr = as.factor(distr)))
+        
+        # CRAN version of `tweenr` also changes levels of factors during
+          # `tween_states()`. This also should be solved in development version.
+        # For now, use workaround with manual patching of levels.
+        distr_levels &lt;- union(
+          levels(pair_mod[[1]]$distr), levels(pair_mod[[2]]$distr)
+        )
+        
+        pair_mod %&gt;%
+          tweenr::tween_states(
+            tweenlength = tweenlength, statelength = statelength,
+            ease = ease, nframes = nframes
+          ) %&gt;%
+          mutate(
+            # Offset frames
+            .frame = .frame + f_offset,
+            # Repare columns after applying `tween_states()`
+            distr = factor(as.character(distr), levels = distr_levels),
+            isMode = as.logical(isMode),
+            colour = as.character(colour)
+          )
+      }
+    )
+}
+
+# Wrapper for constructing animation
+make_animation &lt;- function(plot_data_list, title = NULL,
+                           tweenlength = 2, statelength = 2,
+                           ease = &quot;linear&quot;, nframes = 24,
+                           filename = NULL) {
+  p &lt;- plot_data_list %&gt;%
+    tween_cycled(tweenlength = tweenlength, statelength = statelength,
+                 ease = ease, nframes = nframes) %&gt;%
+    # Construct plot
+    ggplot(aes(frame = .frame)) +
+      add_layers() +
+      labs(title = title)
+  
+  gganimate(
+    p, filename = filename, title_frame = FALSE,
+    # Change resolution by supplying function for graphic device.
+    # Thanks to https://stackoverflow.com/a/46878163/7360839
+    ani.dev = function(...) {png(res = 100, ...)},
+    ani.width = 675, ani.height = 450
+  )
+}</code></pre>
+{{% /spoiler_details %}}
+<p>Function <code>make_animation()</code>, besides arguments for <code>tweenr</code> and <code>gganimate</code> functions, expects a list of plotting data and a title.</p>
+<p>Tips and tricks:</p>
+<ul>
+<li>One can change resolution (for example, to 100 ppi) of output animation in <code>gganimate</code> by supplying <code>ani.dev = function(...) {png(res = 100, ...)}</code>. This trick is thanks to <a href="https://stackoverflow.com/a/46878163/7360839">this StackOverflow answer</a>.</li>
+</ul>
+</div>
+<div id="example-animations" class="section level2">
+<h2>Example animations</h2>
+<p>With the following animations we see that sample mode is very variable for uniform distribution (which is expected), rather variable for normal and very stable for beta distribution with shape parameters 5 and 1.</p>
+<p>Created code enables animating samples with different distribution sets. It is also flexible enough to present evolution of plots for different roundings and definitions of mode.</p>
+<pre class="r"><code># Mode variability of different samples with values rounded to 2 digits
+sample_data %&gt;%
+  map(. %&gt;% mutate(value = round(value, 2))) %&gt;%
+  map(get_plot_data) %&gt;%
+  make_animation(title = &quot;Mode variability for independent samples&quot;)</code></pre>
+<div class="figure">
+<img src="/post/2018-06-14-animating-mode-variability-with-tidyverse-and-tweenr_files/2018-06-14-animating-mode-variability-with-tidyverse-and-tweenr_animation_1.gif" />
+
+</div>
+<pre class="r"><code># Animation for tables with different distribution sets
+sample_data[1:3] %&gt;%
+  # Convert `distr` to factor with common levels to ensure animation stability
+  map(~ mutate(., distr = factor(distr, levels = sort(names(r_funs))))) %&gt;%
+  # Remove distributions in tables
+  map2(names(r_funs), ~ filter(.x, as.character(distr) != .y)) %&gt;%
+  # The same animation process
+  map(. %&gt;% mutate(value = round(value, 2))) %&gt;%
+  map(get_plot_data) %&gt;%
+  make_animation(
+    title = &quot;Automated animation for different distribution sets&quot;
+  )</code></pre>
+<div class="figure">
+<img src="/post/2018-06-14-animating-mode-variability-with-tidyverse-and-tweenr_files/2018-06-14-animating-mode-variability-with-tidyverse-and-tweenr_animation_2.gif" />
+
+</div>
+<pre class="r"><code># Evolution of modes for different mode thresholds
+map(
+  seq(from = 1, to = 0, by = -0.05),
+  ~ get_plot_data(sample_data[[1]] %&gt;% mutate(value = round(value, 2)), .x)
+) %&gt;%
+  make_animation(
+    title = &quot;Evolution of modes for different mode thresholds (from 1 to 0)&quot;,
+    nframes = 6
+  )</code></pre>
+<div class="figure">
+<img src="/post/2018-06-14-animating-mode-variability-with-tidyverse-and-tweenr_files/2018-06-14-animating-mode-variability-with-tidyverse-and-tweenr_animation_3.gif" />
+
+</div>
+<pre class="r"><code># Mode variability of one sample with different roundings
+map2(sample_data[1], 3:1, ~ mutate(.x, value = round(value, .y))) %&gt;%
+  map(get_plot_data) %&gt;%
+  make_animation(
+    title = &quot;Mode variability for different roundings of one sample&quot;,
+    tweenlength = 3, statelength = 1
+  )</code></pre>
+<div class="figure">
+<img src="/post/2018-06-14-animating-mode-variability-with-tidyverse-and-tweenr_files/2018-06-14-animating-mode-variability-with-tidyverse-and-tweenr_animation_4.gif" />
+
+</div>
+</div>
+</div>
+<div id="bonus-accidental-art" class="section level1">
+<h1>Bonus accidental art</h1>
+<p>This piece of “accidental art” I created unintentionally when supplied tweened plot data for different roundings to <code>make_static_plot()</code>:</p>
+<pre class="r"><code>map2(sample_data[1], 3:1, ~ mutate(.x, value = round(value, .y))) %&gt;%
+  map(get_plot_data) %&gt;%
+  tween_cycled() %&gt;%
+  make_static_plot(title = &quot;Accidental art&quot;)</code></pre>
+<p><img src="/post/2018-06-14-animating-mode-variability-with-tidyverse-and-tweenr_files/figure-html/accidental-art-1.png" width="864" /></p>
+</div>
+<div id="conclusion" class="section level1">
+<h1>Conclusion</h1>
+<ul>
+<li>Sometimes a rather simple task can lead to pretty complicated solutions (if one feels like accepting a challenge).</li>
+<li>Visualization of mode variability for different distributions can be done by creating animation with transitions between independent sample distributions (highlighting modes).</li>
+<li>Along the journey of solving small tasks, several tips and tricks were found:
+<ul>
+<li><code>purrr::pmap_dfr()</code> helps create a data frame output after iterating in parallel over multiple vectors. Shorthand formula notation for function should be used with caution when one of the input vectors contain functions to be applied.</li>
+<li>While plotting several distributions organized vertically, one can compute the base y coordinate for them with <code>as.integer(as.factor(distr))</code> (<code>distr</code> being name of the distribution stored as character or factor).</li>
+<li>For efficient “ggplotting” one can create custom function <code>custom_fun()</code> which should return a list with results of <code>ggplot2</code> constructor functions. It can then be used as function layer with <code>ggplot(data) + custom_fun()</code>.</li>
+<li>Value of <code>data</code> argument in <code>ggplot2</code> layer function can itself be a function! It will be applied to present data initialized in <code>ggplot()</code> call. It is very useful when one needs to plot objects for one subset of data over the other. A handy way to create those functions are with <code>. %&gt;% ...</code> notation which creates a functional sequence (one of the features of <code>magrittr</code> pipe).</li>
+<li>Index of the nearest reference point can be found by a slight modification of <code>findInterval()</code> (used with <code>all.inside = TRUE</code>) with adding 1 when right end of interval is closer than left one.</li>
+<li>Using <code>full_join()</code> can be very helpful in situation with different sets of groups. It enables later repairing of unmatched data.</li>
+<li>One can change resolution (for example, to 100 ppi) of output animation in <code>gganimate</code> by supplying <code>ani.dev = function(...) {png(res = 100, ...)}</code>.</li>
+</ul></li>
+</ul>
+{{% spoiler_details summary="sessionInfo()" %}}
+<pre class="r"><code>sessionInfo()
+## R version 3.4.4 (2018-03-15)
+## Platform: x86_64-pc-linux-gnu (64-bit)
+## Running under: Ubuntu 16.04.4 LTS
+## 
+## Matrix products: default
+## BLAS: /usr/lib/openblas-base/libblas.so.3
+## LAPACK: /usr/lib/libopenblasp-r0.2.18.so
+## 
+## locale:
+##  [1] LC_CTYPE=ru_UA.UTF-8       LC_NUMERIC=C              
+##  [3] LC_TIME=ru_UA.UTF-8        LC_COLLATE=ru_UA.UTF-8    
+##  [5] LC_MONETARY=ru_UA.UTF-8    LC_MESSAGES=ru_UA.UTF-8   
+##  [7] LC_PAPER=ru_UA.UTF-8       LC_NAME=C                 
+##  [9] LC_ADDRESS=C               LC_TELEPHONE=C            
+## [11] LC_MEASUREMENT=ru_UA.UTF-8 LC_IDENTIFICATION=C       
+## 
+## attached base packages:
+## [1] methods   stats     graphics  grDevices utils     datasets  base     
+## 
+## other attached packages:
+## [1] bindrcpp_0.2.2       gganimate_0.1.0.9000 tweenr_0.1.5        
+## [4] ggplot2_2.2.1        purrr_0.2.5          tidyr_0.8.1         
+## [7] dplyr_0.7.5         
+## 
+## loaded via a namespace (and not attached):
+##  [1] Rcpp_0.12.17     pillar_1.2.3     compiler_3.4.4   plyr_1.8.4      
+##  [5] bindr_0.1.1      tools_3.4.4      digest_0.6.15    evaluate_0.10.1 
+##  [9] tibble_1.4.2     gtable_0.2.0     pkgconfig_2.0.1  rlang_0.2.1     
+## [13] cli_1.0.0        yaml_2.1.19      blogdown_0.6     xfun_0.1        
+## [17] stringr_1.3.1    knitr_1.20       rprojroot_1.3-2  grid_3.4.4      
+## [21] tidyselect_0.2.4 glue_1.2.0       R6_2.2.2         rmarkdown_1.9   
+## [25] animation_2.5    bookdown_0.7     magrittr_1.5     backports_1.1.2 
+## [29] scales_0.5.0     htmltools_0.3.6  assertthat_0.2.0 colorspace_1.3-2
+## [33] labeling_0.3     utf8_1.1.4       stringi_1.2.2    lazyeval_0.2.1  
+## [37] munsell_0.4.3    crayon_1.3.4</code></pre>
+{{% /spoiler_details %}}
+</div>
