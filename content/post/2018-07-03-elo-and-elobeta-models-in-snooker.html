@@ -1,0 +1,1122 @@
+---
+title: Elo and EloBeta models in snooker
+author: Evgeni Chasnovski
+date: '2018-07-03'
+publishDate: '2018-07-03'
+slug: elo-and-elobeta-models-in-snooker
+categories: []
+tags:
+  - rstats
+  - snooker
+  - comperank
+  - elobeta
+description: 'Research about adequacy of Elo based models applied to snooker match results. Contains a novel approach (EloBeta) targeted for sport results with variable "best of N" format.'
+---
+
+<script src="/rmarkdown-libs/kePrint/kePrint.js"></script>
+
+
+<div id="prologue" class="section level1">
+<h1>Prologue</h1>
+<p>For many years I’ve been following snooker as a sport. It has it all: hypnotic beauty of smart play, elegance of cue strikes and psychological tension of competition. The one thing I don’t like that much is its <em>ranking system</em>.</p>
+<p>Generally speaking, <strong>current snooker ranking is based on player accomplishments in tournaments (events)</strong> with different “weights” for different tournaments. Long time ago, it just used World Championships. Then, after more events had emerged, there was a table of points player could earn for winning at certain stage of tournament. Now it has the form of “rolling” sum of prize money player won during (roughly) past two calendar years.</p>
+<p>This system has two main advantages: it is <strong>simple</strong> (win more money -&gt; rise in rankings) and <strong>predictabile</strong> (want to get certain ranking -&gt; win certain amount of money, other things being equal). The problem is that <strong>this type of rankings doesn’t account the strength (skill, form) of player’s opponents</strong>. The usual counter-argument for this is that if player reached high stage of tournament then he/she is “strong” at this moment of time (“weak players don’t win tournaments”). Well, it does sound quite convincing. However, in snooker, as in any sport, the role of chance should be taken into account: if player is “weaker” it doesn’t mean that he can’t ever win in a match with “stronger” player. It means that this happens less often then the other way around. Here where <a href="https://en.wikipedia.org/wiki/Elo_rating_system">Elo model</a> comes into play.</p>
+<p>The idea behind Elo model is that each player is associated with numerical rating. The assumption is that a result of a game between two players can be predicted based on difference of their ratings: more value indicates more probability of “stronger” (with higher rating) player to win. <strong>Elo ranking is based on current player “strength”</strong> derived by wins against other players. This eliminates main disadvantage of current official ranking system. It is also capable of updating player rating during tournament to numerically react to player’s strong tournament performance.</p>
+<p>Having some practical experience with Elo ratings, I think it can do well in snooker too. However, there is one obstacle: <em>it is devised for competitions with uniform type of games</em>. Yes, there are some variations to account for <a href="https://medium.com/@mattbarger/soccer-elo-the-rebuild-df6b58bd8b94">home field advantage</a> in football or <a href="https://arxiv.org/pdf/1012.4571.pdf">first move advantage</a> in chess (both by adding fixed amount of rating points to “less advantageous” player). In snooker, however, matches are played in the “best of <span class="math inline">\(N\)</span>” format: the first one to win <span class="math inline">\(n = \frac{N + 1}{2}\)</span> frames wins a match. We will also call this format “<span class="math inline">\(n\)</span> to win”.</p>
+<p>Intuitively, winning a “10 to win” match (final of major tournament) should be harder for “weaker” player then “4 to win” match (first rounds of current Home Nations tournaments). This is taken into account by my proposed <strong>EloBeta model</strong>.</p>
+<p>To celebrate actual start of 2018/19 snooker season I decided to write this post in which <strong>I explore adequacy of both Elo and EloBeta models on snooker match results</strong>. Note that the goal is not to build models for forecasting and gambling purposes but for assessing players “strength” and creating “fair” ranking.</p>
+<p>The idea of using Elo rating in snooker is not new at all. There are works on this topic, for example:</p>
+<ul>
+<li><a href="http://www.snookeranalyst.com/current-ratings/rating-summary/">Snooker Analyst</a> provides “Elo inspired” (more like <a href="https://en.wikipedia.org/wiki/Bradley-Terry_model">Bradley–Terry model</a>) rating system based on the idea of updating rating based on difference between “actual frames won” and “expected frames won”. This approach is a little bit questionable. Surely, more frame difference should indicate more difference in strength, however, achieving that is not player’s goal. In snooker aim is “just” to win match, i.e. get certain amount of frame wins before the opponent.</li>
+<li><a href="https://www.snookerisland.com/forum/viewtopic.php?f=59&amp;t=5585">This forum discussion</a> with implementation of basic Elo model.</li>
+<li>Possibly, there are other works that I’ve missed. I will highly appreciate any information on this topic.</li>
+</ul>
+</div>
+<div id="overview" class="section level1">
+<h1>Overview</h1>
+<p>This post is intended for both R users interested in Elo ratings and snooker analysts and fans. All experiments are written with intention to be reproducible. All code is hidden under spoilers (text appears after clicking on its summary, usually beginning with “Code for …”). It has commentaries and uses <a href="https://www.tidyverse.org/">tidyverse</a> packages, so it might be an interesting read for R users and programmers.</p>
+<p>This post is organized as follows:</p>
+<ul>
+<li><strong>Models</strong> describes <em>Elo</em> and <em>EloBeta</em> models with their R implementations.</li>
+<li><strong>Experiment</strong> describes details and intentions of computations: which <em>data</em> and <em>methodology</em> were used (and why) and what are the <em>results</em>.</li>
+<li><strong>Exploration of EloBeta ratings</strong> has application results of EloBeta model to actual snooker data. This section is written more for Snooker fans than for R enthusiasts.</li>
+</ul>
+<p>We will need the following setup:</p>
+{{% spoiler_details summary="Code for setup" %}}
+<pre class="r"><code># Data wrangling packages
+suppressPackageStartupMessages(library(dplyr))
+library(tidyr)
+library(purrr)
+# Visualization package
+library(ggplot2)
+# Package for ratings
+suppressPackageStartupMessages(library(comperank))
+
+theme_set(theme_bw())
+
+# Shouldn&#39;t be needed. Added just in case.
+set.seed(20180703)</code></pre>
+{{% /spoiler_details %}}
+</div>
+<div id="models" class="section level1">
+<h1>Models</h1>
+<p>Both models are based on the following assumptions:</p>
+<ol style="list-style-type: decimal">
+<li>There is a fixed set of players which should be ranked from “strongest” (first place) to “weakest” (last place).</li>
+<li>Ranking is done by associating player <span class="math inline">\(i\)</span> with numerical rating <span class="math inline">\(r_i\)</span>: a number indicating the “strength” of player (more value -&gt; “stronger”).</li>
+<li>The more difference in player ratings before the match the less favorable is “weaker” player to win it.</li>
+<li>Ratings are updated after every match based on its result and the ratings before it.</li>
+<li>Winning against “stronger” opponent should lead to bigger increase in rating than winning against “weaker” opponent. The opposite should be true for losing.</li>
+</ol>
+<div id="elo" class="section level2">
+<h2>Elo</h2>
+{{% spoiler_details summary="Code for Elo model" %}}
+<pre class="r"><code>#&#39; @details This function is vectorized by all its arguments. Also usage of
+#&#39; `...` is crucial to allow supplying unrelated arguments in the future.
+#&#39; 
+#&#39; @return A probability of player 1 (rating `rating1`) wins in a match with
+#&#39;   player 2 (rating `rating2`). Here difference in ratings directly affects
+#&#39;   the outcome.
+elo_win_prob &lt;- function(rating1, rating2, ksi = 400, ...) {
+  norm_rating_diff &lt;- (rating2 - rating1) / ksi
+  
+  1 / (1 + 10^norm_rating_diff)
+}
+
+#&#39; @return A rating function for Elo model that can be supplied to
+#&#39;   `comperank::add_iterative_ratings()`.
+elo_fun_gen &lt;- function(K, ksi = 400) {
+  function(rating1, score1, rating2, score2) {
+    comperank::elo(rating1, score1, rating2, score2, K = K, ksi = ksi)[1, ]
+  }
+}</code></pre>
+{{% /spoiler_details %}}
+<p>Elo model updates ratings by the following steps:</p>
+<ul>
+<li><p><strong>Compute probability</strong> (<em>before</em> the match) <strong>of certain player to win the match</strong>. Probability of one player (we will call him/her “first”) with “identifier” <span class="math inline">\(i\)</span> and rating <span class="math inline">\(r_i\)</span> winning against the other player (“second”) with “identifier” <span class="math inline">\(j\)</span> and rating <span class="math inline">\(r_j\)</span> is equal to</p>
+<p><span class="math display">\[Pr(r_i , r_j) = \frac{1}{1 + 10^{(r_j - r_i)/400}}\]</span></p>
+<p>This way of computing probability is aligned with third model assumption.</p>
+<p>Difference normalization by 400 is a mathematical way to say which difference is considered “big”. This can be replaced by a model parameter <span class="math inline">\(\xi\)</span>, however this only affects the spread of future ratings and is often an overkill. Number 400 is fairly standard in chess world.</p>
+<p>In general approach probability is equal to <span class="math inline">\(L(r_j - r_i)\)</span> where <span class="math inline">\(L(x)\)</span> is some strictly increasing function with values from 0 to 1. We will use logistic curve to compute winning probability. More thorough study can be found in <a href="https://www.stat.berkeley.edu/~aldous/Papers/me-Elo-SS.pdf">this article</a>.</p></li>
+<li><strong>Obtain match result</strong> <span class="math inline">\(S\)</span>. In basic model it is 1 if first player wins (second player loses), 0.5 in case of draw and 0 if second player wins.</li>
+<li><strong>Update ratings</strong>:
+<ul>
+<li><span class="math inline">\(\delta = K \cdot (S - Pr(r_i , r_j))\)</span>. This is the value by which ratings will change. It introduces the “K factor” (only model parameter). Less <span class="math inline">\(K\)</span> (ratings being equal) means less change in ratings - model is more conservative, i.e. more wins is needed to “prove” increase in “strength”. On the other hand, more <span class="math inline">\(K\)</span> means more “trust” to the current results than current ratings. <em>Choosing “optimal” <span class="math inline">\(K\)</span> is a way to produce “good” ranking system</em>.</li>
+<li><span class="math inline">\(r_i^{(new)} = r_i + \delta\)</span>, <span class="math inline">\(r_j^{(new)} = r_j - \delta\)</span>.</li>
+</ul></li>
+</ul>
+<p><strong>Notes</strong>:</p>
+<ul>
+<li>As one can see from rating update formulas, the sum of ratings for all ranked players doesn’t change over time: rating increase of one rating can be only done by taking this amount from another player.</li>
+<li>Players without any matches played are associated with initial rating 0. The usual value is 1500, however I don’t see any other reason except psychological for this. With previous note, using 0 means that sum of all ratings will always be 0, which is kind of beautiful.</li>
+<li>It is needed some matches to be played in order for rating to represent player’s “strength”. This introduces a problem: newly added players start with rating 0 which is almost surely not the lowest among current players. In other words, newcomers are considered to be “stronger” than some other players. This should be dealt with by external procedures of rating updates when introducing new player: maybe he/she should start with some low rating while compensating overall sum decrease by uniform increasing of other players’ ratings.</li>
+<li>Why this procedure makes sense? In case of equal ratings <span class="math inline">\(\delta\)</span> always equals <span class="math inline">\(0.5 \cdot K\)</span>. Let’s say, for example, that <span class="math inline">\(r_i = 0\)</span> and <span class="math inline">\(r_j = 400\)</span>. It means that probability of first player winning is <span class="math inline">\(\frac{1}{1 + 10} \approx 0.0909\)</span>, i.e. he/she will win 1 out of 11 matches.
+<ul>
+<li>In case of win, he/she will be awarded with approximately <span class="math inline">\(0.909 \cdot K\)</span> increase, which is more than in case of equal ratings.</li>
+<li>If he/she is defeated, then rating is decreased by approximately <span class="math inline">\(0.0909 \cdot K\)</span>, which is less than in case of equal ratings.</li>
+</ul>
+This shows that Elo model is aligned with fifth model assumption: winning against “stronger” opponent leads to bigger increase in rating than winning against “weaker” opponent and vice versa.</li>
+</ul>
+<p>Of course, Elo model has its (fairly high-level) <a href="https://en.wikipedia.org/wiki/Elo_rating_system#Practical_issues">practical issues</a>. However, the most important for our research is that “it thinks” that all matches are played in uniform conditions. It means, that match length isn’t taken into account: winning in “4 to win” match is rewarded the same as winning in “10 to win” match. That is where EloBeta comes into play.</p>
+</div>
+<div id="elobeta" class="section level2">
+<h2>EloBeta</h2>
+{{% spoiler_details summary="Code for EloBeta model" %}}
+<pre class="r"><code>#&#39; @details This function is vectorized by all its arguments.
+#&#39; 
+#&#39; @return A probability of player 1 (rating `rating1`) wins in a match with
+#&#39;   player 2 (rating `rating2`). Match is played until either player wins
+#&#39;   `frames_to_win` frames. Here difference in ratings directly affects
+#&#39;   the probability of winning one frame.
+elobeta_win_prob &lt;- function(rating1, rating2, frames_to_win, ksi = 400, ...) {
+  prob_frame &lt;- elo_win_prob(rating1 = rating1, rating2 = rating2, ksi = ksi)
+  
+  # Probability that first player wins `frames_to_win` frames sooner than second
+    # player based on probability of first player to win one frame `prob_frame`.
+    # Frames are treated as independent games.
+  pbeta(prob_frame, frames_to_win, frames_to_win)
+}
+
+#&#39; @return Match result in terms of player 1 win: 1 if he/she wins, 0.5 in case
+#&#39;   of a draw, and 0 if he/she loses.
+get_match_result &lt;- function(score1, score2) {
+  # There are no ties in snooker but this handles general case
+  near_score &lt;- dplyr::near(score1, score2)
+  
+  dplyr::if_else(near_score, 0.5, as.numeric(score1 &gt; score2))
+}
+
+#&#39; @return A rating function for EloBeta model that can be supplied to
+#&#39;   `comperank::add_iterative_ratings()`.
+elobeta_fun_gen &lt;- function(K, ksi = 400) {
+  function(rating1, score1, rating2, score2) {
+    prob_win &lt;- elobeta_win_prob(
+      rating1 = rating1, rating2 = rating2,
+      frames_to_win = pmax(score1, score2), ksi = ksi
+    )
+    
+    match_result &lt;- get_match_result(score1, score2)
+    delta &lt;- K * (match_result - prob_win)
+    
+    c(rating1 + delta, rating2 - delta)
+  }
+}</code></pre>
+{{% /spoiler_details %}}
+<p>In Elo model difference in ratings directly affects the outcome probability of winning the whole match. The main idea behind EloBeta model is to <strong>make difference in ratings directly affect the outcome of one frame</strong> and <strong>actually compute the probability of a player winning <span class="math inline">\(n\)</span> frames before his opponent</strong>.</p>
+<p>The question is: how to compute this probability? Turns out, this is one of the oldest task in the history of probability theory and has its own name - <a href="https://en.wikipedia.org/wiki/Problem_of_points">Problem of points</a>. Very nice description can be found in <a href="https://probabilityandstats.wordpress.com/2016/11/06/the-problem-of-points/">this post</a>. Using its notation, the outcome probability equals to:</p>
+<p><span class="math display">\[
+P(n, n) = \sum\limits_{j = n}^{2n-1}{{{2n-1} \choose {j}} p^j (1-p)^{2n-1-j}}
+\]</span></p>
+<p>Here <span class="math inline">\(P(n, n)\)</span> is a probability of first player to win in “<span class="math inline">\(n\)</span> to win” match; <span class="math inline">\(p\)</span> is his/her probability to win one frame (<span class="math inline">\(1-p\)</span> - opponents probability). With this approach one assumes that <strong>result of frames inside a match is independent one from another</strong>. This is arguable, but necessary assumption (in terms of this model).</p>
+<p>Is there a way to compute this faster? It turns out, that the answer is yes. After hours of formula wrangling, practical experiments and internet search I found the following <a href="https://dlmf.nist.gov/8.17#E5">property</a> of <a href="https://en.wikipedia.org/wiki/Beta_function#Incomplete_beta_function">regularized incomplete beta function</a> <span class="math inline">\(I_x(a, b)\)</span>. By substituting <span class="math inline">\(m = k,~ n = 2k - 1\)</span> into that property and changing <span class="math inline">\(k\)</span> into <span class="math inline">\(n\)</span> we obtain that <span class="math inline">\(P(n, n) = I_p(n, n)\)</span>.</p>
+<p>This is also very good news for R users, because <span class="math inline">\(I_p(n, n)\)</span> can be computed as simply as <code>pbeta(p, n, n)</code>. <strong>Note</strong> that the general case probability of winning <span class="math inline">\(n\)</span> frames before opponent wins <span class="math inline">\(m\)</span> can also be computed as <span class="math inline">\(I_p(n, m)\)</span> and <code>pbeta(p, n, m)</code> respectively. This introduces the reach field of <em>updating winning probabilities during the mach</em>.</p>
+<p>So the procedure of updating ratings within EloBeta model is as follows (given ratings <span class="math inline">\(r_i, r_j\)</span>, number of frames <span class="math inline">\(n\)</span> to win in match and match outcome <span class="math inline">\(S\)</span>, as in Elo model):</p>
+<ul>
+<li><strong>Compute probability of first player to win the frame</strong>: <span class="math inline">\(p = Pr(r_i , r_j) = \frac{1}{1 + 10^{(r_j - r_i)/400}}\)</span>.</li>
+<li><strong>Compute probability of this player to win the match</strong>: <span class="math inline">\(Pr^{Beta}(r_i, r_j) = I_p(n, n)\)</span>. For example, if <span class="math inline">\(p\)</span> equals 0.4 then probability to win “4 to win” match drops to 0.29 and with “18 to win” to 0.11.</li>
+<li><strong>Update ratings</strong>:
+<ul>
+<li><span class="math inline">\(\delta = K \cdot (S - Pr^{Beta}(r_i , r_j))\)</span>.</li>
+<li><span class="math inline">\(r_i^{(new)} = r_i + \delta\)</span>, <span class="math inline">\(r_j^{(new)} = r_j - \delta\)</span>.</li>
+</ul></li>
+</ul>
+<p><strong>Note</strong> that, as difference in ratings affects probability of winning one frame (not the whole match), we should expect lower optimal <span class="math inline">\(K\)</span>: part of <span class="math inline">\(\delta\)</span>’s value comes from amplifying effect of <span class="math inline">\(Pr^{Beta}(r_i, r_j)\)</span>.</p>
+<p>The idea of computation match result based on probability of winning one frame is not very novel. On <a href="https://wismuth.com/elo/calculator.html">this site</a>, authored by François Labelle, you can find online computation of probability of winning a “best of <span class="math inline">\(N\)</span>” match (with some other functionality). I was very glad to notice that results of our computations match. However, I didn’t find any sources of incorporating this into Elo updating procedure. I will highly appreciate any information on this topic.</p>
+<p>I’ve only managed to found <a href="http://freerangestats.info/blog/2015/08/07/fibs-elo-ratings-basics">this post</a> and <a href="http://www.bkgm.com/articles/McCool/ratings.html">this description</a> of Elo system on backgammon internet server (FIBS). Here different matches are handled by multiplying rating difference by square root of match length. However, there seems to be no strong theoretical reason for this.</p>
+</div>
+</div>
+<div id="experiment" class="section level1">
+<h1>Experiment</h1>
+<p>The experiment has several goals. Based on snooker data:</p>
+<ul>
+<li>Derive best value of “K factor” for both models.</li>
+<li>Study stability of models in terms of prediction probability accuracy.</li>
+<li>Study the effect of using “invitational” events on ratings.</li>
+<li>Produce “best” rating history of all professional players from 2017/18 season.</li>
+</ul>
+<div id="data" class="section level2">
+<h2>Data</h2>
+{{% spoiler_details summary="Code for data creation" %}}
+<pre class="r"><code># Function to split cases between &quot;train&quot;, &quot;validation&quot;, and &quot;test&quot; types
+split_cases &lt;- function(n, props = c(0.5, 0.25, 0.25)) {
+  breaks &lt;- n * cumsum(head(props, -1)) / sum(props)
+  id_vec &lt;- findInterval(seq_len(n), breaks, left.open = TRUE) + 1
+  
+  c(&quot;train&quot;, &quot;validation&quot;, &quot;test&quot;)[id_vec]
+}
+
+pro_players &lt;- snooker_players %&gt;% filter(status == &quot;pro&quot;)
+
+# Matches only between pro players.
+pro_matches_all &lt;- snooker_matches %&gt;%
+  # Using actually happened matches
+  filter(!walkover1, !walkover2) %&gt;%
+  # Filter matches only between pro players
+  semi_join(y = pro_players, by = c(player1Id = &quot;id&quot;)) %&gt;%
+  semi_join(y = pro_players, by = c(player2Id = &quot;id&quot;)) %&gt;%
+  # Add &#39;season&#39; column
+  left_join(
+    y = snooker_events %&gt;% select(id, season), by = c(eventId = &quot;id&quot;)
+  ) %&gt;%
+  # Ensure arranging by end date
+  arrange(endDate) %&gt;%
+  # Prepare for widecr format
+  transmute(
+    game = seq_len(n()),
+    player1 = player1Id, score1, player2 = player2Id, score2,
+    matchId = id, endDate, eventId, season,
+    # Compute match type (&quot;train&quot;, &quot;validation&quot;, or &quot;test&quot;) with 50/25/25 split
+    matchType = split_cases(n())
+  ) %&gt;%
+  # Convert to widecr format
+  as_widecr()
+
+# Matches only between pro players in not invitational events (which by
+  # quantity is dominated by Championship League).
+pro_matches_off &lt;- pro_matches_all %&gt;%
+  anti_join(
+    y = snooker_events %&gt;% filter(type == &quot;Invitational&quot;),
+    by = c(eventId = &quot;id&quot;)
+  )
+
+# Split confirmation
+get_split &lt;- . %&gt;% count(matchType) %&gt;% mutate(share = n / sum(n))
+
+# This should give 50/25/25 split (train/validation/test).
+pro_matches_all %&gt;% get_split()
+## # A tibble: 3 x 3
+##   matchType      n share
+##   &lt;chr&gt;      &lt;int&gt; &lt;dbl&gt;
+## 1 test        1030 0.250
+## 2 train       2059 0.5  
+## 3 validation  1029 0.250
+
+# This gives different split because invitational events aren&#39;t spread evenly
+  # during season. However, this way matches are split based on the same
+  # __time__ breaks as in `pro_matches_all`. This ensures that matches with same
+  # type represent identical __time periods__.
+pro_matches_off %&gt;% get_split()
+## # A tibble: 3 x 3
+##   matchType      n share
+##   &lt;chr&gt;      &lt;int&gt; &lt;dbl&gt;
+## 1 test         820 0.225
+## 2 train       1810 0.497
+## 3 validation  1014 0.278
+
+# Grid for K factor
+k_grid &lt;- 1:100</code></pre>
+{{% /spoiler_details %}}
+<p>We will use snooker data from <a href="https://echasnovski.github.io/comperank/reference/index.html#section-snooker-data">comperank</a> package. The original source is <a href="http://www.snooker.org/">snooker.org</a> site. Results are taken from the following matches:</p>
+<ul>
+<li>Match is <strong>from 2016/17 or 2017/18 seasons</strong>.</li>
+<li>Match is a <strong>part of “professional” snooker event</strong>. That is:
+<ul>
+<li>It has “Invitational”, “Qualifying”, or “Ranking” type. We will also differ two sets of matches: “all matches” (from all these events) and “official matches” (not from invitational events). There are two main reasons behind it:
+<ul>
+<li>In invitational events not all players are given opportunity to change their ratings (which isn’t a clearly bad thing under Elo and EloBeta models).</li>
+<li>Belief that players “take seriously” only official ranking events. <strong>Note</strong> that most of “Invitational” events are from “Championship League” which, I think, are treated by most players as practice with opportunity to win money, i.e. “not very seriously”. Their presence can affect outcome ratings.</li>
+</ul>
+Besides “Championship League”, other invitational events are: “2016 China Championship”, both “Champion of Champions”, both “Masters”, “2017 Hong Kong Masters”, “2017 World games”, “2017 Romanian Masters”.</li>
+<li>It describes traditional snooker (not 6 Red or Power Snooker) between individual players (not teams).</li>
+<li>Both genders can take part (not only men or women).</li>
+<li>Players of all ages can take part (not only seniors or under 21).</li>
+<li>It is not “Shoot-Out” as those events are treated differently in snooker.org database.</li>
+</ul></li>
+<li>Match <strong>actually happened</strong>: its result is due to actual play from both players.</li>
+<li>Match <strong>is between two professionals</strong> (pros). List of professionals is taken as for 2017/18 season (131 players). This seems like the most controversial decision, as removing “pro-ama” (“ama” for “amateur”) and “ama-ama” matches leads to “closing eyes” on pros’ losses to amateurs, and thus giving unfair advantage to those pros. I think this choice is necessary to ensure absence of <a href="https://en.wikipedia.org/wiki/Elo_rating_system#Ratings_inflation_and_deflation">rating inflation</a> which will happen if matches with amateurs are taken into account. Another possibility would be to study pros and amas together, but this seems unreasonable to me within this research. Professional’s loss to amateur is treated as loss of opportunity to increase rating.</li>
+</ul>
+<p>The final numbers of used matches are 4118 for “all matches” and 3644 for “official matches” (62.9 and 55.6 matches per player respectively).</p>
+</div>
+<div id="methodology" class="section level2">
+<h2>Methodology</h2>
+{{% spoiler_details summary="Code for methodology functions" %}}
+<pre class="r"><code>#&#39; @param matches A `longcr` or `widecr` object with column `matchType` (with
+#&#39;   type of match for the experiment: &quot;train&quot;, &quot;validation&quot;, or &quot;test&quot;).
+#&#39; @param test_type A type of match to be used for computing goodness of fit.
+#&#39;   For experiment correctness, all matches with this type should happen later
+#&#39;   than all other (&quot;warm-up&quot;) matches. This means having bigger values in
+#&#39;   `game` column.
+#&#39; @param k_vec Vector of &quot;K factor&quot; values to compute goodness of fit.
+#&#39; @param rate_fun_gen Function that, given &quot;K factor&quot; value, returns rating
+#&#39;   function that can be supplied to `comperank::add_iterative_ratings()`.
+#&#39; @param get_win_prob Function to compute rating probability based on
+#&#39;   ratings of players (`rating1`, `rating2`) and number of frames needed to
+#&#39;   win in a match (`frames_to_win`). __Note__ that it should be vectorized by
+#&#39;   all its arguments.
+#&#39; @param initial_ratings Initial ratings in format ready for
+#&#39;   `comperank::add_iterative_ratings()`.
+#&#39; 
+#&#39; @details This function computes:
+#&#39; - History of iterative ratings after arranging `matches` by `game` column.
+#&#39; - For matches with type equals to `test_type`:
+#&#39;     - Probability of player 1 winning.
+#&#39;     - Match result in terms of player 1 win: 1 if he/she wins, 0.5 in case of
+#&#39;     a draw, and 0 if he/she loses.
+#&#39; - Goodness of fit in the form of RMSE: square root of mean square error,
+#&#39; where &quot;error&quot; is difference between predicted probability and match result.
+#&#39; 
+#&#39; @return A tibble with columns &#39;k&#39; for &quot;K factor&quot; and &#39;goodness&#39; for RMSE
+#&#39;   goodness of fit.
+compute_goodness &lt;- function(matches, test_type, k_vec, rate_fun_gen,
+                             get_win_prob, initial_ratings = 0) {
+  cat(&quot;\n&quot;)
+  map_dfr(k_vec, function(cur_k) {
+    # Track execution
+    cat(cur_k, &quot; &quot;)
+    matches %&gt;%
+      arrange(game) %&gt;%
+      add_iterative_ratings(
+        rate_fun = rate_fun_gen(cur_k), initial_ratings = initial_ratings
+      ) %&gt;%
+        left_join(y = matches %&gt;% select(game, matchType), by = &quot;game&quot;) %&gt;%
+        filter(matchType %in% test_type) %&gt;%
+        mutate(
+          # Number of frames needed to win in a match
+          framesToWin = pmax(score1, score2),
+          # Probability of player 1 winning a match with `frame_to_win` frames
+            # needed to win.
+          winProb = get_win_prob(
+            rating1 = rating1Before, rating2 = rating2Before,
+            frames_to_win = framesToWin
+          ),
+          result = get_match_result(score1, score2),
+          squareError = (result - winProb)^2
+        ) %&gt;%
+        summarise(goodness = sqrt(mean(squareError)))
+  }) %&gt;%
+    mutate(k = k_vec) %&gt;%
+    select(k, goodness)
+}
+
+#&#39; A wrapper for `compute_goodness()` to be used with design matrix data.
+compute_goodness_wrap &lt;- function(matches_name, test_type, k_vec,
+                                  rate_fun_gen_name, win_prob_fun_name,
+                                  initial_ratings = 0) {
+  matches_tbl &lt;- get(matches_name)
+  rate_fun_gen &lt;- get(rate_fun_gen_name)
+  get_win_prob &lt;- get(win_prob_fun_name)
+  
+  compute_goodness(
+    matches_tbl, test_type, k_vec, rate_fun_gen, get_win_prob, initial_ratings
+  )
+}
+
+#&#39; Function to perform experiment.
+#&#39; 
+#&#39; @param test_type Vector of values for `test_type` for `compute_goodness()`.
+#&#39; @param rating_type Names of rating models.
+#&#39; @param data_type Suffixes of data types.
+#&#39; @param k_vec,initial_ratings Values for `compute_goodnes()`
+#&#39; 
+#&#39; @details This function generates design matrix and computes multiple values
+#&#39; of goodness of fit for different combinations of rating and data types. For
+#&#39; this to work, variables with the following combinations of names should be
+#&#39; created in the global environment:
+#&#39; - &quot;pro_matches_&quot; + `&lt;test type&gt;` + `&lt;data type&gt;` for matches data.
+#&#39; - `&lt;rating type&gt;` + &quot;_fun_gen&quot; for rating function generators.
+#&#39; - `&lt;rating type&gt;` + &quot;_win_prob&quot; for functions that compute win probability.
+#&#39; 
+#&#39; @return A tibble with columns:
+#&#39; - __testType__ &lt;chr&gt; : Test type identifier.
+#&#39; - __ratingType__ &lt;chr&gt; : Rating type identifier.
+#&#39; - __dataType__ &lt;chr&gt; : Data type identifier.
+#&#39; - __k__ &lt;dbl/int&gt; : Value of &quot;K factor&quot;.
+#&#39; - __goodness__ &lt;dbl&gt; : Value of goodness of fit.
+do_experiment &lt;- function(test_type = c(&quot;validation&quot;, &quot;test&quot;),
+                          rating_type = c(&quot;elo&quot;, &quot;elobeta&quot;),
+                          data_type = c(&quot;all&quot;, &quot;off&quot;),
+                          k_vec = k_grid,
+                          initial_ratings = 0) {
+  crossing(
+    testType = test_type, ratingType = rating_type, dataType = data_type
+  ) %&gt;%
+    mutate(
+      dataName = paste0(&quot;pro_matches_&quot;, testType, &quot;_&quot;, dataType),
+      kVec = rep(list(k_vec), n()),
+      rateFunGenName = paste0(ratingType, &quot;_fun_gen&quot;),
+      winProbFunName = paste0(ratingType, &quot;_win_prob&quot;),
+      initialRatings = rep(list(initial_ratings), n()),
+      experimentData = pmap(
+        list(dataName, testType, kVec,
+             rateFunGenName, winProbFunName, initialRatings),
+        compute_goodness_wrap
+      )
+    ) %&gt;%
+    unnest(experimentData) %&gt;%
+    select(testType, ratingType, dataType, k, goodness)
+}</code></pre>
+{{% /spoiler_details %}}
+<p>To find “optimal” value of <span class="math inline">\(K\)</span> we will use the even grid <span class="math inline">\(K = 1, 2, ..., 100\)</span>. Accounting for greater values seems to be unreasonable which is confirmed by the experiment. The following procedure is used to find it:</p>
+<ul>
+<li>For every <span class="math inline">\(K\)</span>:
+<ul>
+<li><strong>Compute history of iterative ratings</strong> of certain model based on certain data set. It means that ratings of players would be known before every match. This is done with <a href="https://echasnovski.github.io/comperank/reference/iterative.html">add_iterative_ratings()</a> function from <code>comperank</code> package. This procedure corresponds to “live ratings” which update after every match.</li>
+<li>Based on data, starting from a certain (distant from the beginning) moment in time, <strong>compute goodness of model fit</strong>. We will use <a href="https://en.wikipedia.org/wiki/Root-mean-square_deviation">RMSE</a> between probability of first player to win (computed based on model) and match result. That is <span class="math inline">\(RMSE = \sqrt{\frac{1}{|T|} \sum\limits_{t \in T}{(S_t - P_t)^2}}\)</span>, where <span class="math inline">\(T\)</span> - indices of used matches, <span class="math inline">\(|T|\)</span> - number of used matches, <span class="math inline">\(S_t\)</span> - result of match for first player, <span class="math inline">\(P_t\)</span> - probability of first player to win the match (computed based on model). Not including matches from the beginning of data is needed for ratings to “catch up” to “current strength” from initial ratings.</li>
+</ul></li>
+<li>The value of <span class="math inline">\(K\)</span> with <strong>stable minimal RMSE</strong> is said to be optimal. Here by “stable” we mean that small RMSE values is present in some neighborhood of optimal <span class="math inline">\(K\)</span> (will be controlled not very strictly by looking at graphs). Values of RMSE lower 0.5 (value for “model” with constant 0.5 probability) will be considered a success.</li>
+</ul>
+<p>As one of the goals is to study stability of models, data will be split into three subsets: “train”, “validation” and “test”. They are ordered in time, i.e. any “train”/“validation” match has ending time earlier than any “validation”/“test” match. I decided to do actual split in 50/25/25 proportion for “all matches”. Split of “official matches” is done by removing from “all matches” invitational events. It gives split not totally in desired proportion, but rather 49.7/27.8/22.5. However, this approach ensures that matches with same type in both match data represent identical <strong>time periods</strong>.</p>
+<p>Experiment will be performed for all combinations of the following variables:</p>
+<ul>
+<li><strong>Type of model</strong>: Elo and EloBeta.</li>
+<li><strong>Type of match data</strong>: “All matches” and “official matches”.</li>
+<li><strong>Experiment type</strong>: “Validation” (“validation” matches are used for computing RMSE after “warming up” on “train” matches) and “Test” (“test” matches are used after “warming up” on both “train” and “validation” ones).</li>
+</ul>
+</div>
+<div id="results" class="section level2">
+<h2>Results</h2>
+{{% spoiler_details summary="Code for doing experiment" %}}
+<pre class="r"><code>pro_matches_validation_all &lt;- pro_matches_all %&gt;% filter(matchType != &quot;test&quot;)
+pro_matches_validation_off &lt;- pro_matches_off %&gt;% filter(matchType != &quot;test&quot;)
+pro_matches_test_all &lt;- pro_matches_all
+pro_matches_test_off &lt;- pro_matches_off</code></pre>
+<pre class="r"><code># Takes some time to run
+experiment_tbl &lt;- do_experiment()</code></pre>
+{{% /spoiler_details %}}
+{{% spoiler_details summary="Code for producing results of experiment" %}}
+<pre class="r"><code>cap_first &lt;- function(x) {
+    paste0(toupper(substring(x, 1, 1)), substring(x, 2))
+}
+
+plot_data &lt;- experiment_tbl %&gt;%
+  unite(group, ratingType, dataType) %&gt;%
+  mutate(
+    testType = cap_first(testType),
+    groupName = recode(
+      group, elo_all = &quot;Elo, all matches&quot;, elo_off = &quot;Elo, official matches&quot;,
+      elobeta_all = &quot;EloBeta, all matches&quot;,
+      elobeta_off = &quot;EloBeta, official matches&quot;
+    ),
+    # Ensure preferred order. This is needed because sorting of strings will
+      # give &quot;Elo, all matches&quot;, &quot;EloBeta, all matches&quot;, &quot;EloBeta, official
+      # matches&quot;, and &quot;Elo, official matches&quot; as, apperently, non-letters are
+      # ignored while sorting.
+    groupName = factor(groupName, levels = unique(groupName))
+  )
+
+compute_optimal_k &lt;- . %&gt;% group_by(testType, groupName) %&gt;%
+  slice(which.min(goodness)) %&gt;%
+  ungroup()
+compute_k_labels &lt;- . %&gt;% compute_optimal_k() %&gt;%
+  mutate(label = paste0(&quot;K = &quot;, k)) %&gt;%
+  group_by(groupName) %&gt;%
+  # If optimal K within future facet is on the right, it needs a little
+    # adjustment to the right. If on the left - full and a little adjustment to
+    # the left.
+  mutate(hjust = - (k == max(k)) * 1.1 + 1.05) %&gt;%
+  ungroup()
+
+plot_experiment_results &lt;- function(results_tbl) {
+  ggplot(results_tbl) +
+    geom_hline(
+      yintercept = 0.5, colour = &quot;#AA5555&quot;, size = 0.5, linetype = &quot;dotted&quot;
+    ) +
+    geom_line(aes(k, goodness, colour = testType)) +
+    geom_vline(
+      data = compute_optimal_k,
+      mapping = aes(xintercept = k, colour = testType),
+      linetype = &quot;dashed&quot;, show.legend = FALSE
+    ) +
+    geom_text(
+      data = compute_k_labels,
+      mapping = aes(k, Inf, label = label, hjust = hjust),
+      vjust = 1.2
+    ) +
+    facet_wrap(~ groupName) +
+    scale_colour_manual(
+      values = c(Validation = &quot;#377EB8&quot;, Test = &quot;#FF7F00&quot;),
+      guide = guide_legend(
+        title = &quot;Experiment&quot;, reverse = TRUE,
+        override.aes = list(size = 4)
+      )
+    ) +
+    labs(
+      x = &quot;K factor&quot;, y = &quot;Goodness of fit (RMSE)&quot;,
+      title = &quot;Best goodness of fit of Elo and EloBeta models are almost equal&quot;,
+      subtitle = paste0(
+        &#39;Using official matches (without invitational events) gives more &#39;,
+        &#39;stable results.\n&#39;,
+        &#39;All optimal K values from test experiment (with longer &quot;warm up&quot;) are&#39;,
+        &#39; lower than from validation experiment.&#39;
+      )
+    ) +
+    theme(title = element_text(size = 14), strip.text = element_text(size = 12))
+}
+
+plot_experiment_results(plot_data)</code></pre>
+{{% /spoiler_details %}}
+<p><img src="/post/2018-07-03-elo-and-elobeta-models-in-snooker_files/figure-html/experiment-results_hidden-1.png" width="864" /></p>
+<p>From the experiment we can make the following conclusions:</p>
+<ul>
+<li>As it was expected, optimal <span class="math inline">\(K\)</span> values for EloBeta are lower than for Elo.</li>
+<li>Using official matches (without invitational events) gives more stable results (“Validation” and “Test” results differ less). This shouldn’t be considered as a point that professionals take invitational events not seriously. Probably, this is due to quality of match results from “Championship League”: it has rather unpredictable “3 to win” format and tight schedule.</li>
+<li>Change in RMSE for optimal <span class="math inline">\(K\)</span> is not substantial. That is, RMSE didn’t change drastically after computing optimal <span class="math inline">\(K\)</span> in “Validation” and applying it in “Test” experiment. Moreover, on “official matches” it even decreased.</li>
+<li>All optimal K values from test experiment (with longer “warm up”) are lower than from validation experiment. This may be <em>the result</em> of longer “warm up” or <em>just a feature</em> of particular data.</li>
+<li>Best goodness of Elo and EloBeta fits are almost the same. Both are stable and below 0.5. Data for “official matches” (as they demonstrate stable behavior) is presented below. As results don’t differ that much, we will round optimal <span class="math inline">\(K\)</span> to a factor of 5: for Elo model it is 30 and for EloBeta - 10.</li>
+</ul>
+<table class="table table-striped table-hover" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Group
+</th>
+<th style="text-align:right;">
+Optimal K
+</th>
+<th style="text-align:right;">
+RMSE
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Elo, all matches
+</td>
+<td style="text-align:right;">
+24
+</td>
+<td style="text-align:right;">
+0.465
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Elo, official matches
+</td>
+<td style="text-align:right;">
+29
+</td>
+<td style="text-align:right;">
+0.455
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+EloBeta, all matches
+</td>
+<td style="text-align:right;">
+10
+</td>
+<td style="text-align:right;">
+0.462
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+EloBeta, official matches
+</td>
+<td style="text-align:right;">
+11
+</td>
+<td style="text-align:right;">
+0.453
+</td>
+</tr>
+</tbody>
+</table>
+<p>Based on these results, I am inclined to conclude that <strong>Elo model with <span class="math inline">\(K = 30\)</span> and EloBeta model with <span class="math inline">\(K = 10\)</span> can be usefully applied to officially ranked snooker matches</strong>. However, EloBeta model accounts for different “<span class="math inline">\(n\)</span> to win” matches, so it should be preferred over Elo.</p>
+</div>
+</div>
+<div id="exploration-of-elobeta-ratings" class="section level1">
+<h1>Exploration of EloBeta ratings</h1>
+<p>The following results are computed based on “official matches” with EloBeta model (<span class="math inline">\(K = 10\)</span>). All possible conclusions shouldn’t be viewed as personal to any player.</p>
+<div id="top-16-by-the-end-of-201718" class="section level2">
+<h2>Top 16 by the end of 2017/18</h2>
+{{% spoiler_details summary="Code for 2017/18 top 16" %}}
+<pre class="r"><code># Helper function
+gather_to_longcr &lt;- function(tbl) {
+  bind_rows(
+    tbl %&gt;% select(-matches(&quot;2&quot;)) %&gt;% rename_all(funs(gsub(&quot;1&quot;, &quot;&quot;, .))),
+    tbl %&gt;% select(-matches(&quot;1&quot;)) %&gt;% rename_all(funs(gsub(&quot;2&quot;, &quot;&quot;, .)))
+  ) %&gt;%
+    arrange(game)
+}
+
+# Extract best &quot;K factor&quot; value
+best_k &lt;- experiment_tbl %&gt;%
+  filter(testType == &quot;test&quot;, ratingType == &quot;elobeta&quot;, dataType == &quot;off&quot;) %&gt;%
+  slice(which.min(goodness)) %&gt;%
+  pull(k)
+
+  #!!! Round to &quot;pretty&quot; number as it doesn&#39;t affect result that much!!!
+best_k &lt;- round(best_k / 5) * 5
+
+# Compute ratings at the end of the data
+elobeta_ratings &lt;- rate_iterative(
+  pro_matches_test_off, elobeta_fun_gen(best_k), initial_ratings = 0
+) %&gt;%
+  rename(ratingEloBeta = rating_iterative) %&gt;%
+  arrange(desc(ratingEloBeta)) %&gt;%
+  left_join(
+    y = snooker_players %&gt;% select(id, playerName = name), by = c(player = &quot;id&quot;)
+  ) %&gt;%
+  mutate(rankEloBeta = order(ratingEloBeta, decreasing = TRUE)) %&gt;%
+  select(player, playerName, ratingEloBeta, rankEloBeta)
+
+elobeta_top16 &lt;- elobeta_ratings %&gt;%
+  filter(rankEloBeta &lt;= 16) %&gt;%
+  mutate(
+    rankChr = formatC(rankEloBeta, width = 2, format = &quot;d&quot;, flag = &quot;0&quot;),
+    ratingEloBeta = round(ratingEloBeta, 1)
+  )</code></pre>
+{{% /spoiler_details %}}
+<p>Top 16 by EloBeta model at the end of 2017/18 season looks like this (official data is also taken from snooker.org site):</p>
+<table style="width:85%; margin-left: auto; margin-right: auto;" class="table table-striped table-hover">
+<thead>
+<tr>
+<th style="text-align:left;">
+Player
+</th>
+<th style="text-align:center;">
+EloBeta rank
+</th>
+<th style="text-align:right;">
+EloBeta rating
+</th>
+<th style="text-align:center;">
+Official rank
+</th>
+<th style="text-align:right;">
+Official rating
+</th>
+<th style="text-align:center;">
+EloBeta rank increase
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;width: 30%; border-right:1px solid;">
+Ronnie O’Sullivan
+</td>
+<td style="text-align:center;width: 10%; font-weight: bold;">
+1
+</td>
+<td style="text-align:right;width: 15%; border-right:1px solid;">
+128.8
+</td>
+<td style="text-align:center;width: 10%; font-weight: bold;">
+2
+</td>
+<td style="text-align:right;width: 17%; border-right:1px solid;">
+905 750
+</td>
+<td style="text-align:center;font-weight: bold;">
+<span style="     color: green;">1</span>
+</td>
+</tr>
+<tr>
+<td style="text-align:left;width: 30%; border-right:1px solid;">
+Mark J Williams
+</td>
+<td style="text-align:center;width: 10%; font-weight: bold;">
+2
+</td>
+<td style="text-align:right;width: 15%; border-right:1px solid;">
+123.4
+</td>
+<td style="text-align:center;width: 10%; font-weight: bold;">
+3
+</td>
+<td style="text-align:right;width: 17%; border-right:1px solid;">
+878 750
+</td>
+<td style="text-align:center;font-weight: bold;">
+<span style="     color: green;">1</span>
+</td>
+</tr>
+<tr>
+<td style="text-align:left;width: 30%; border-right:1px solid;">
+John Higgins
+</td>
+<td style="text-align:center;width: 10%; font-weight: bold;">
+3
+</td>
+<td style="text-align:right;width: 15%; border-right:1px solid;">
+112.5
+</td>
+<td style="text-align:center;width: 10%; font-weight: bold;">
+4
+</td>
+<td style="text-align:right;width: 17%; border-right:1px solid;">
+751 525
+</td>
+<td style="text-align:center;font-weight: bold;">
+<span style="     color: green;">1</span>
+</td>
+</tr>
+<tr>
+<td style="text-align:left;width: 30%; border-right:1px solid;">
+Mark Selby
+</td>
+<td style="text-align:center;width: 10%; font-weight: bold;">
+4
+</td>
+<td style="text-align:right;width: 15%; border-right:1px solid;">
+102.4
+</td>
+<td style="text-align:center;width: 10%; font-weight: bold;">
+1
+</td>
+<td style="text-align:right;width: 17%; border-right:1px solid;">
+1 315 275
+</td>
+<td style="text-align:center;font-weight: bold;">
+<span style="     color: red;">-3</span>
+</td>
+</tr>
+<tr>
+<td style="text-align:left;width: 30%; border-right:1px solid;">
+Judd Trump
+</td>
+<td style="text-align:center;width: 10%; font-weight: bold;">
+5
+</td>
+<td style="text-align:right;width: 15%; border-right:1px solid;">
+92.2
+</td>
+<td style="text-align:center;width: 10%; font-weight: bold;">
+5
+</td>
+<td style="text-align:right;width: 17%; border-right:1px solid;">
+660 250
+</td>
+<td style="text-align:center;font-weight: bold;">
+<span style="     color: grey;">0</span>
+</td>
+</tr>
+<tr>
+<td style="text-align:left;width: 30%; border-right:1px solid;">
+Barry Hawkins
+</td>
+<td style="text-align:center;width: 10%; font-weight: bold;">
+6
+</td>
+<td style="text-align:right;width: 15%; border-right:1px solid;">
+83.1
+</td>
+<td style="text-align:center;width: 10%; font-weight: bold;">
+7
+</td>
+<td style="text-align:right;width: 17%; border-right:1px solid;">
+543 225
+</td>
+<td style="text-align:center;font-weight: bold;">
+<span style="     color: green;">1</span>
+</td>
+</tr>
+<tr>
+<td style="text-align:left;width: 30%; border-right:1px solid;">
+Ding Junhui
+</td>
+<td style="text-align:center;width: 10%; font-weight: bold;">
+7
+</td>
+<td style="text-align:right;width: 15%; border-right:1px solid;">
+82.8
+</td>
+<td style="text-align:center;width: 10%; font-weight: bold;">
+6
+</td>
+<td style="text-align:right;width: 17%; border-right:1px solid;">
+590 525
+</td>
+<td style="text-align:center;font-weight: bold;">
+<span style="     color: red;">-1</span>
+</td>
+</tr>
+<tr>
+<td style="text-align:left;width: 30%; border-right:1px solid;">
+Stuart Bingham
+</td>
+<td style="text-align:center;width: 10%; font-weight: bold;">
+8
+</td>
+<td style="text-align:right;width: 15%; border-right:1px solid;">
+74.3
+</td>
+<td style="text-align:center;width: 10%; font-weight: bold;">
+13
+</td>
+<td style="text-align:right;width: 17%; border-right:1px solid;">
+324 587
+</td>
+<td style="text-align:center;font-weight: bold;">
+<span style="     color: green;">5</span>
+</td>
+</tr>
+<tr>
+<td style="text-align:left;width: 30%; border-right:1px solid;">
+Ryan Day
+</td>
+<td style="text-align:center;width: 10%; font-weight: bold;">
+9
+</td>
+<td style="text-align:right;width: 15%; border-right:1px solid;">
+71.9
+</td>
+<td style="text-align:center;width: 10%; font-weight: bold;">
+16
+</td>
+<td style="text-align:right;width: 17%; border-right:1px solid;">
+303 862
+</td>
+<td style="text-align:center;font-weight: bold;">
+<span style="     color: green;">7</span>
+</td>
+</tr>
+<tr>
+<td style="text-align:left;width: 30%; border-right:1px solid;">
+Neil Robertson
+</td>
+<td style="text-align:center;width: 10%; font-weight: bold;">
+10
+</td>
+<td style="text-align:right;width: 15%; border-right:1px solid;">
+70.6
+</td>
+<td style="text-align:center;width: 10%; font-weight: bold;">
+10
+</td>
+<td style="text-align:right;width: 17%; border-right:1px solid;">
+356 125
+</td>
+<td style="text-align:center;font-weight: bold;">
+<span style="     color: grey;">0</span>
+</td>
+</tr>
+<tr>
+<td style="text-align:left;width: 30%; border-right:1px solid;">
+Shaun Murphy
+</td>
+<td style="text-align:center;width: 10%; font-weight: bold;">
+11
+</td>
+<td style="text-align:right;width: 15%; border-right:1px solid;">
+70.1
+</td>
+<td style="text-align:center;width: 10%; font-weight: bold;">
+8
+</td>
+<td style="text-align:right;width: 17%; border-right:1px solid;">
+453 875
+</td>
+<td style="text-align:center;font-weight: bold;">
+<span style="     color: red;">-3</span>
+</td>
+</tr>
+<tr>
+<td style="text-align:left;width: 30%; border-right:1px solid;">
+Kyren Wilson
+</td>
+<td style="text-align:center;width: 10%; font-weight: bold;">
+12
+</td>
+<td style="text-align:right;width: 15%; border-right:1px solid;">
+70.1
+</td>
+<td style="text-align:center;width: 10%; font-weight: bold;">
+9
+</td>
+<td style="text-align:right;width: 17%; border-right:1px solid;">
+416 250
+</td>
+<td style="text-align:center;font-weight: bold;">
+<span style="     color: red;">-3</span>
+</td>
+</tr>
+<tr>
+<td style="text-align:left;width: 30%; border-right:1px solid;">
+Jack Lisowski
+</td>
+<td style="text-align:center;width: 10%; font-weight: bold;">
+13
+</td>
+<td style="text-align:right;width: 15%; border-right:1px solid;">
+68.8
+</td>
+<td style="text-align:center;width: 10%; font-weight: bold;">
+26
+</td>
+<td style="text-align:right;width: 17%; border-right:1px solid;">
+180 862
+</td>
+<td style="text-align:center;font-weight: bold;">
+<span style="     color: green;">13</span>
+</td>
+</tr>
+<tr>
+<td style="text-align:left;width: 30%; border-right:1px solid;">
+Stephen Maguire
+</td>
+<td style="text-align:center;width: 10%; font-weight: bold;">
+14
+</td>
+<td style="text-align:right;width: 15%; border-right:1px solid;">
+63.7
+</td>
+<td style="text-align:center;width: 10%; font-weight: bold;">
+17
+</td>
+<td style="text-align:right;width: 17%; border-right:1px solid;">
+291 025
+</td>
+<td style="text-align:center;font-weight: bold;">
+<span style="     color: green;">3</span>
+</td>
+</tr>
+<tr>
+<td style="text-align:left;width: 30%; border-right:1px solid;">
+Mark Allen
+</td>
+<td style="text-align:center;width: 10%; font-weight: bold;">
+15
+</td>
+<td style="text-align:right;width: 15%; border-right:1px solid;">
+63.7
+</td>
+<td style="text-align:center;width: 10%; font-weight: bold;">
+12
+</td>
+<td style="text-align:right;width: 17%; border-right:1px solid;">
+332 450
+</td>
+<td style="text-align:center;font-weight: bold;">
+<span style="     color: red;">-3</span>
+</td>
+</tr>
+<tr>
+<td style="text-align:left;width: 30%; border-right:1px solid;">
+Yan Bingtao
+</td>
+<td style="text-align:center;width: 10%; font-weight: bold;">
+16
+</td>
+<td style="text-align:right;width: 15%; border-right:1px solid;">
+61.6
+</td>
+<td style="text-align:center;width: 10%; font-weight: bold;">
+23
+</td>
+<td style="text-align:right;width: 17%; border-right:1px solid;">
+215 125
+</td>
+<td style="text-align:center;font-weight: bold;">
+<span style="     color: green;">7</span>
+</td>
+</tr>
+</tbody>
+</table>
+<p>Some observations:</p>
+<ul>
+<li>Current official #1 Mark Selby is ranked 3 places lower in EloBeta. This might be a sign that current distribution of prize money doesn’t quite reflect efforts needed to win them (on average).</li>
+<li>Most “underrated” players according to official ranking are Jack Lisowski (astonishing 13 place difference), Ryan Day and Yan Bingtao (both have 7 place difference).</li>
+<li>Stuart Bingham is ranked 5 positions higher by EloBeta probably because he didn’t play for six month due to WPBSA ban. His EloBeta rating didn’t change during this period but in official rating he lost points because of its “rolling” nature. This case demonstrates one important differences between two approaches: official system is good to account for “not playing” and EloBeta is good to account for “playing”.</li>
+<li>Judd Trump and Neil Robertson are ranked the same under both methods.</li>
+<li>With EloBeta model Allister Carter (officially ranked #11), Anthony McGill (#14) and Luca Brecel (#15) are not in top 16. Instead, Jack Lisowski (#26), Yan Bingtao (#23) and Stephen Maguire (#17) are in.</li>
+</ul>
+<p>Here is an <strong>example of predictions Based on EloBeta model</strong>. The probability of 16-th player (Yan Bingtao) win one frame in a match against first player (Ronnie O’Sullivan) equals to 0.404. In “4 to win” match it drops to 0.299, in “10 to win” - 0.197 and in World Championship final “18 to win” - 0.125. In my opinion, these numbers might be close to reality.</p>
+</div>
+<div id="collective-evolution-of-elobeta-ratings" class="section level2">
+<h2>Collective evolution of EloBeta ratings</h2>
+{{% spoiler_details summary="Code for rating evolution" %}}
+<pre class="r"><code># Helper data
+seasons_break &lt;- ISOdatetime(2017, 5, 2, 0, 0, 0, tz = &quot;UTC&quot;)
+
+  # Compute evolution of ratings
+elobeta_history &lt;- pro_matches_test_off %&gt;%
+  add_iterative_ratings(elobeta_fun_gen(best_k), initial_ratings = 0) %&gt;%
+  gather_to_longcr() %&gt;%
+  left_join(y = pro_matches_test_off %&gt;% select(game, endDate), by = &quot;game&quot;)
+
+  # Generate plot
+plot_all_elobeta_history &lt;- function(history_tbl) {
+  history_tbl %&gt;%
+    mutate(isTop16 = player %in% elobeta_top16$player) %&gt;%
+    ggplot(aes(endDate, ratingAfter, group = player)) +
+      geom_step(data = . %&gt;% filter(!isTop16), colour = &quot;#C2DF9A&quot;) +
+      geom_step(data = . %&gt;% filter(isTop16), colour = &quot;#22A01C&quot;) +
+      geom_hline(yintercept = 0, colour = &quot;#AAAAAA&quot;) +
+      geom_vline(
+        xintercept = seasons_break, linetype = &quot;dotted&quot;,
+        colour = &quot;#E41A1C&quot;, size = 1
+      ) +
+      geom_text(
+        x = seasons_break, y = Inf, label = &quot;End of 2016/17&quot;,
+        colour = &quot;#E41A1C&quot;, hjust = 1.05, vjust = 1.2
+      ) +
+      scale_x_datetime(date_labels = &quot;%Y-%m&quot;) +
+      labs(
+        x = NULL, y = &quot;EloBeta rating&quot;,
+        title = paste0(
+          &quot;Most of current top 16 established at the end of 2016/17 season&quot;
+        ),
+        subtitle = paste0(
+          &quot;Winning of event is well noticable as rapid increase without &quot;,
+          &quot;descrease at the end.&quot;
+        )
+      ) +
+      theme(title = element_text(size = 14))
+}
+
+plot_all_elobeta_history(elobeta_history)</code></pre>
+{{% /spoiler_details %}}
+<p><img src="/post/2018-07-03-elo-and-elobeta-models-in-snooker_files/figure-html/rating-evolution_all_hidden-1.png" width="864" /></p>
+</div>
+<div id="evolution-of-elobeta-top-16" class="section level2">
+<h2>Evolution of EloBeta top 16</h2>
+{{% spoiler_details summary="Code for rating evolution of top 16" %}}
+<pre class="r"><code># Compute plot data
+top16_rating_evolution &lt;- elobeta_history %&gt;%
+  # Using `inner_join` to leave only players from `elobeta_top16`
+  inner_join(y = elobeta_top16 %&gt;% select(-ratingEloBeta), by = &quot;player&quot;) %&gt;%
+  # Leave games only from 2017/18 season
+  semi_join(
+    y = pro_matches_test_off %&gt;% filter(season == 2017), by = &quot;game&quot;
+  ) %&gt;%
+  mutate(playerLabel = paste(rankChr, playerName))
+
+  # Generate plot
+plot_top16_elobeta_history &lt;- function(elobeta_history) {
+  ggplot(elobeta_history) +
+    geom_step(aes(endDate, ratingAfter, group = player), colour = &quot;#22A01C&quot;) +
+    geom_hline(yintercept = 0, colour = &quot;#AAAAAA&quot;) +
+    geom_rug(
+      data = elobeta_top16,
+      mapping = aes(y = ratingEloBeta), sides = &quot;r&quot;
+    ) +
+    facet_wrap(~ playerLabel, nrow = 4, ncol = 4) +
+    scale_x_datetime(date_labels = &quot;%Y-%m&quot;) +
+    labs(
+      x = NULL, y = &quot;EloBeta rating&quot;,
+      title = &quot;Rating evolution for EloBeta top 16 (as of 2017/18 end)&quot;,
+      subtitle = paste0(
+        &quot;Ronnie O&#39;Sullivan and Mark J Williams did very well in 2017/18 &quot;,
+        &quot;season.\n&quot;,
+        &quot;As did Jack Lisowski: rise from negative rating to place 13.&quot;
+      )
+    ) +
+    theme(title = element_text(size = 14), strip.text = element_text(size = 12))
+}
+
+plot_top16_elobeta_history(top16_rating_evolution)</code></pre>
+{{% /spoiler_details %}}
+<p><img src="/post/2018-07-03-elo-and-elobeta-models-in-snooker_files/figure-html/rating-evolution_top16_hidden-1.png" width="864" /></p>
+</div>
+</div>
+<div id="conclusions" class="section level1">
+<h1>Conclusions</h1>
+<ul>
+<li>Solving “Problem of points” in R is as easy as <code>pbeta(p, n, m)</code>.</li>
+<li>EloBeta model is a modification of Elo for “best of <span class="math inline">\(N\)</span>” (or “<span class="math inline">\(n\)</span> to win”) matches. It can make predictions for different match length.</li>
+<li>Elo model with <span class="math inline">\(K = 30\)</span> and EloBeta model with <span class="math inline">\(K = 10\)</span> can be usefully applied to officially ranked snooker matches.</li>
+<li>Snooker related:
+<ul>
+<li>Most “underrated” players from EloBeta top 16 according to official ranking (as of end of 2017/18 season) are Jack Lisowski, Ryan Day and Yan Bingtao.</li>
+<li>Season 2017/18 was very productive for Ronnie O’Sullivan, Mark J Williams and Jack Lisowski.</li>
+</ul></li>
+</ul>
+{{% spoiler_details summary="sessionInfo()" %}}
+<pre class="r"><code>sessionInfo()
+## R version 3.4.4 (2018-03-15)
+## Platform: x86_64-pc-linux-gnu (64-bit)
+## Running under: Ubuntu 16.04.4 LTS
+## 
+## Matrix products: default
+## BLAS: /usr/lib/openblas-base/libblas.so.3
+## LAPACK: /usr/lib/libopenblasp-r0.2.18.so
+## 
+## locale:
+##  [1] LC_CTYPE=ru_UA.UTF-8       LC_NUMERIC=C              
+##  [3] LC_TIME=ru_UA.UTF-8        LC_COLLATE=ru_UA.UTF-8    
+##  [5] LC_MONETARY=ru_UA.UTF-8    LC_MESSAGES=ru_UA.UTF-8   
+##  [7] LC_PAPER=ru_UA.UTF-8       LC_NAME=C                 
+##  [9] LC_ADDRESS=C               LC_TELEPHONE=C            
+## [11] LC_MEASUREMENT=ru_UA.UTF-8 LC_IDENTIFICATION=C       
+## 
+## attached base packages:
+## [1] methods   stats     graphics  grDevices utils     datasets  base     
+## 
+## other attached packages:
+## [1] bindrcpp_0.2.2   comperank_0.1.0  comperes_0.2.0   ggplot2_2.2.1   
+## [5] purrr_0.2.5      tidyr_0.8.1      dplyr_0.7.6      kableExtra_0.9.0
+## 
+## loaded via a namespace (and not attached):
+##  [1] Rcpp_0.12.17      highr_0.7         pillar_1.2.3     
+##  [4] compiler_3.4.4    plyr_1.8.4        bindr_0.1.1      
+##  [7] tools_3.4.4       digest_0.6.15     gtable_0.2.0     
+## [10] evaluate_0.10.1   tibble_1.4.2      viridisLite_0.3.0
+## [13] pkgconfig_2.0.1   rlang_0.2.1       cli_1.0.0        
+## [16] rstudioapi_0.7    yaml_2.1.19       blogdown_0.6     
+## [19] xfun_0.2          httr_1.3.1        stringr_1.3.1    
+## [22] xml2_1.2.0        knitr_1.20        hms_0.4.2        
+## [25] grid_3.4.4        rprojroot_1.3-2   tidyselect_0.2.4 
+## [28] glue_1.2.0        R6_2.2.2          rmarkdown_1.10   
+## [31] bookdown_0.7      readr_1.1.1       magrittr_1.5     
+## [34] backports_1.1.2   scales_0.5.0      htmltools_0.3.6  
+## [37] assertthat_0.2.0  rvest_0.3.2       colorspace_1.3-2 
+## [40] labeling_0.3      utf8_1.1.4        stringi_1.2.3    
+## [43] lazyeval_0.2.1    munsell_0.5.0     crayon_1.3.4</code></pre>
+{{% /spoiler_details %}}
+</div>
