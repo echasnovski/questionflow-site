@@ -1,0 +1,219 @@
+---
+title: Transformers, glue!
+author: Evgeni Chasnovski
+date: '2018-08-21'
+publishDate: '2018-08-21'
+slug: transformers-glue
+categories: []
+tags:
+  - rstats
+  - glue
+description: 'General description of transformers functionality in {glue} with some potentially useful examples.'
+---
+
+
+
+<div id="prologue" class="section level1">
+<h1>Prologue</h1>
+<p>Package {<a href="https://glue.tidyverse.org/index.html">glue</a>} is designed as “small, fast, dependency free” tools to “glue strings to data in R”. To put simply, it provides concise and flexible alternatives for <code>paste()</code> with some additional features:</p>
+<pre class="r"><code>library(glue)
+
+x &lt;- 10
+paste(&quot;I have&quot;, x, &quot;apples.&quot;)
+## [1] &quot;I have 10 apples.&quot;
+glue(&quot;I have {x} apples.&quot;)
+## I have 10 apples.</code></pre>
+<p>Recently, fate lead me to try using {glue} in a package. I was very pleased to how it makes code more readable, which I believe is a very important during package development. However, I stumbled upon this pretty unexpected behavior:</p>
+<pre class="r"><code>y &lt;- NULL
+paste(&quot;I have&quot;, x, &quot;apples and&quot;, y, &quot;oranges.&quot;)
+## [1] &quot;I have 10 apples and  oranges.&quot;
+str(glue(&quot;I have {x} apples and {y} oranges.&quot;))
+## Classes &#39;glue&#39;, &#39;character&#39;  chr(0)</code></pre>
+<p>If one of the expressions is evaluated into <code>NULL</code> then the output becomes empty string. This was unintuitive result and for a while I thought about stop using {glue} because <code>NULL</code> is expected to be a valid input. However, if <a href="https://github.com/jimhester">Jim Hester</a> is package author, you should expect some sort of designed solution to <em>any</em> problem. This time wasn’t an exception: there is a <a href="https://glue.tidyverse.org/articles/transformers.html">transformers</a> functionality.</p>
+<p>Basically, transformer is a function that changes the output of R expressions the way you want. As I wanted to make <code>NULL</code> visible, this is a perfect way to do it.</p>
+</div>
+<div id="overview" class="section level1">
+<h1>Overview</h1>
+<p>This post describes an easy way to create {glue} wrappers with custom transformers. It also lists some examples that can be helpful in common tasks:</p>
+<ul>
+<li><strong>Transformers</strong> uses a little bit of functional programming magic to create a potentially useful transformers.</li>
+</ul>
+<p>Setup is very simple this time:</p>
+<pre class="r"><code># {glue} was loaded in examples
+# For functional programming magic
+library(purrr)
+# For string manipulation in one of the examples
+library(stringr)</code></pre>
+</div>
+<div id="transformers" class="section level1">
+<h1>Transformers</h1>
+<p>The task of creating wrapper for <code>glue()</code> essentially consists from two parts:</p>
+<ul>
+<li>Evaluate properly a supplied R expressions.</li>
+<li>Modify them to show intended behavior.</li>
+</ul>
+<p>The <code>transforming_glue()</code> wrapper does exactly this:</p>
+<pre class="r"><code>transforming_glue &lt;- function(transformer) {
+  function(..., .sep = &quot;&quot;, .envir = parent.frame(), .open = &quot;{&quot;, .close = &quot;}&quot;,
+           .na = &quot;NA&quot;) {
+    glue(
+      ..., .sep = .sep, .envir = .envir, .open = .open, .close = .close,
+      .na = &quot;NA&quot;,
+      .transformer = compose(transformer, identity_transformer)
+    )
+  }
+}</code></pre>
+<p>Breakdown of this code:</p>
+<ul>
+<li>Input is a <code>transformer</code> - function that takes an already evaluated R object and modifies it the way you want.</li>
+<li>Output is a function that is a wrapper for <code>glue()</code>. Its transformer is a function composition that first evaluates R expression with <code>identity_transformer</code> (function from {glue}) and then applies supplied <code>transformer</code>. Composition here is done with <a href="https://purrr.tidyverse.org/reference/compose.html">compose()</a> - an element of functional programming magic from {<a href="https://purrr.tidyverse.org/">purrr</a>}.</li>
+</ul>
+<div id="show-null" class="section level2">
+<h2>Show NULL</h2>
+<p>Back to initial problem. We want <code>NULL</code> to be a valid R value for a <code>glue()</code>:</p>
+<pre class="r"><code>show_null &lt;- function(x, val = &quot;NULL&quot;) {
+  if (is.null(x)) {
+    val
+  } else {
+    x
+  }
+}
+
+glue_null &lt;- transforming_glue(show_null)
+
+# Example from Prologue
+glue_null(&quot;I have {x} apples and {y} oranges.&quot;)
+## I have 10 apples and NULL oranges.</code></pre>
+</div>
+<div id="fixed-width-output" class="section level2">
+<h2>Fixed width output</h2>
+<p>With {<a href="https://stringr.tidyverse.org/">stringr</a>} package you can force an output to be fixed width:</p>
+<pre class="r"><code>str_width &lt;- function(x, width) {
+  if (str_length(x) &gt; width) {
+    str_trunc(x, width, side = &quot;right&quot;)
+  } else {
+    str_pad(x, width, side = &quot;right&quot;)
+  }
+}
+
+glue_width &lt;- transforming_glue(partial(str_width, width = 10))
+
+short_oh &lt;- &quot;Ooh!&quot;
+long_oh &lt;- &quot;Oooooooooooh!&quot;
+glue_width(&quot;This puzzles ({short_oh}) and surprises ({long_oh}) me.&quot;)
+## This puzzles (Ooh!      ) and surprises (Ooooooo...) me.</code></pre>
+<p><strong>Note</strong> usage of <a href="https://purrr.tidyverse.org/reference/partial.html">partial()</a> here: it takes function along with its arguments’ values and modifies it by “pre-filling” those arguments.</p>
+</div>
+<div id="enclose-output" class="section level2">
+<h2>Enclose output</h2>
+<p>In some situation you might want to explicitly show which strings represent R objects in the output. You can do that by enclosing the output in some sort of braces:</p>
+<pre class="r"><code>enclose &lt;- function(x, start = &quot;&lt;&quot;, end = &quot;&gt;&quot;) {
+  paste0(start, x, end)
+}
+
+glue_enclose &lt;- transforming_glue(enclose)
+
+glue_enclose(&quot;What if I had {x} oranges?&quot;)
+## What if I had &lt;10&gt; oranges?</code></pre>
+</div>
+<div id="bizarro-encryption" class="section level2">
+<h2>Bizarro encryption</h2>
+<p>One possibly useful pattern is to encrypt the used data to prevent it from seeing by untrustworthy eyes. Here we will use simplified <code>bizarro()</code> example from <a href="https://www.youtube.com/watch?v=7oyiPBjLAWY">this insightful UseR 2018 talk</a> by the amazing <a href="https://github.com/jennybc">Jennifer (Jenny) Bryan</a>. Here <code>glue_bizarro()</code> “reverts” R objects based on their type.</p>
+<pre class="r"><code>str_reverse &lt;- function(x) {
+  vapply(
+    strsplit(x, &quot;&quot;),
+    FUN = function(z) paste(rev(z), collapse = &quot;&quot;),
+    FUN.VALUE = &quot;&quot;
+  )
+}
+
+bizarro &lt;- function(x) {
+  cls &lt;- class(x)[[1]]
+  
+  switch(
+    cls,
+    logical = !x,
+    integer = -x,
+    numeric = -x,
+    character = str_reverse(x),
+    x
+  )
+}
+
+glue_bizarro &lt;- transforming_glue(bizarro)
+
+new_fruit &lt;- &quot;pomegranate&quot;
+glue_bizarro(
+  &quot;Then I might have {x + 10} apples. Is that {TRUE}?
+   Maybe I want {new_fruit}?&quot;
+)
+## Then I might have -20 apples. Is that FALSE?
+## Maybe I want etanargemop?</code></pre>
+</div>
+<div id="ultimate-example" class="section level2">
+<h2>Ultimate example</h2>
+<p>Using already familiar functional programming technique, we can create an ultimate <code>glue()</code> wrapper as a combination, or rather <code>compose()</code>-ition, of all previous examples. The most important part is supply them in correct order:</p>
+<pre class="r"><code>glue_ultimate &lt;- transforming_glue(
+  compose(
+    enclose,
+    partial(str_width, width = 10),
+    # To ensure that input of `str_width()` is character
+    as.character,
+    show_null,
+    bizarro
+  )
+)
+
+glue_ultimate(
+  &quot;I have {x} apples and {y} oranges.
+   This puzzles ({short_oh}) and surprises ({long_oh}) me.
+   What if I had {x} oranges?
+   Then I might have {x + 10} apples. Is that {TRUE}?
+   Maybe I want {new_fruit}?&quot;
+)
+## I have &lt;-10       &gt; apples and &lt;NULL      &gt; oranges.
+## This puzzles (&lt;!hoO      &gt;) and surprises (&lt;!hooooo...&gt;) me.
+## What if I had &lt;-10       &gt; oranges?
+## Then I might have &lt;-20       &gt; apples. Is that &lt;FALSE     &gt;?
+## Maybe I want &lt;etanarg...&gt;?</code></pre>
+</div>
+</div>
+<div id="conclusions" class="section level1">
+<h1>Conclusions</h1>
+<ul>
+<li>Package {glue} is a very useful and flexible way of creating strings based on evaluation of R expressions.</li>
+<li>Its “transformer” functionality is an interesting way to manipulate string output by supplying custom modification function.</li>
+<li>Functional programming with {purrr} can be very helpful in creating concise and extensible code.</li>
+</ul>
+{{% spoiler_details summary="sessionInfo()" %}}
+<pre class="r"><code>sessionInfo()
+## R version 3.4.4 (2018-03-15)
+## Platform: x86_64-pc-linux-gnu (64-bit)
+## Running under: Ubuntu 16.04.5 LTS
+## 
+## Matrix products: default
+## BLAS: /usr/lib/openblas-base/libblas.so.3
+## LAPACK: /usr/lib/libopenblasp-r0.2.18.so
+## 
+## locale:
+##  [1] LC_CTYPE=ru_UA.UTF-8       LC_NUMERIC=C              
+##  [3] LC_TIME=ru_UA.UTF-8        LC_COLLATE=ru_UA.UTF-8    
+##  [5] LC_MONETARY=ru_UA.UTF-8    LC_MESSAGES=ru_UA.UTF-8   
+##  [7] LC_PAPER=ru_UA.UTF-8       LC_NAME=C                 
+##  [9] LC_ADDRESS=C               LC_TELEPHONE=C            
+## [11] LC_MEASUREMENT=ru_UA.UTF-8 LC_IDENTIFICATION=C       
+## 
+## attached base packages:
+## [1] methods   stats     graphics  grDevices utils     datasets  base     
+## 
+## other attached packages:
+## [1] stringr_1.3.1 purrr_0.2.5   glue_1.3.0   
+## 
+## loaded via a namespace (and not attached):
+##  [1] Rcpp_0.12.18     bookdown_0.7     crayon_1.3.4     digest_0.6.15   
+##  [5] rprojroot_1.3-2  backports_1.1.2  magrittr_1.5     evaluate_0.11   
+##  [9] blogdown_0.8     rlang_0.2.1.9000 stringi_1.2.4    rmarkdown_1.10  
+## [13] tools_3.4.4      xfun_0.3         yaml_2.2.0       compiler_3.4.4  
+## [17] htmltools_0.3.6  knitr_1.20</code></pre>
+{{% /spoiler_details %}}
+</div>
