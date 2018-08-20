@@ -15,26 +15,26 @@ description: 'General description of transformers functionality in {glue} with s
 
 <div id="prologue" class="section level1">
 <h1>Prologue</h1>
-<p>Package {<a href="https://glue.tidyverse.org/index.html">glue</a>} is designed as “small, fast, dependency free” tools to “glue strings to data in R”. To put simply, it is a concise and flexible alternative for <code>paste()</code> with some additional features:</p>
+<p>Package {<a href="https://glue.tidyverse.org/index.html">glue</a>} is designed as “small, fast, dependency free” tools to “glue strings to data in R”. To put simply, it provides concise and flexible alternatives for <code>paste()</code> with some additional features:</p>
 <pre class="r"><code>library(glue)
 
 x &lt;- 10
-glue(&quot;I have {x} apples.&quot;)
-## I have 10 apples.
 paste(&quot;I have&quot;, x, &quot;apples.&quot;)
-## [1] &quot;I have 10 apples.&quot;</code></pre>
-<p>Recently fate lead me to try using {glue} in a package. I was very pleased to how it makes code more readable, which I believe is a very important during package development. However, I stumbled upon this pretty unexpected behavior:</p>
+## [1] &quot;I have 10 apples.&quot;
+glue(&quot;I have {x} apples.&quot;)
+## I have 10 apples.</code></pre>
+<p>Recently, fate lead me to try using {glue} in a package. I was very pleased to how it makes code more readable, which I believe is a very important during package development. However, I stumbled upon this pretty unexpected behavior:</p>
 <pre class="r"><code>y &lt;- NULL
-str(glue(&quot;I have {x} apples and {y} oranges.&quot;))
-## Classes &#39;glue&#39;, &#39;character&#39;  chr(0)
 paste(&quot;I have&quot;, x, &quot;apples and&quot;, y, &quot;oranges.&quot;)
-## [1] &quot;I have 10 apples and  oranges.&quot;</code></pre>
-<p>If one of the expressions is evaluated into <code>NULL</code> then the output becomes empty string. This was unintuitive result and for a while I thought about stop using {glue} as <code>NULL</code> is expected to be a valid input. However, if <a href="https://github.com/jimhester">Jim Hester</a> is package author, you should expect some sort of designed solution to any problem. This time wasn’t an exception with <a href="https://glue.tidyverse.org/articles/transformers.html">transformers</a> functionality.</p>
+## [1] &quot;I have 10 apples and  oranges.&quot;
+str(glue(&quot;I have {x} apples and {y} oranges.&quot;))
+## Classes &#39;glue&#39;, &#39;character&#39;  chr(0)</code></pre>
+<p>If one of the expressions is evaluated into <code>NULL</code> then the output becomes empty string. This was unintuitive result and for a while I thought about stop using {glue} because <code>NULL</code> is expected to be a valid input. However, if <a href="https://github.com/jimhester">Jim Hester</a> is package author, you should expect some sort of designed solution to <em>any</em> problem. This time wasn’t an exception: there is a <a href="https://glue.tidyverse.org/articles/transformers.html">transformers</a> functionality.</p>
 <p>Basically, transformer is a function that changes the output of R expressions the way you want. As I wanted to make <code>NULL</code> visible, this is a perfect way to do it.</p>
 </div>
 <div id="overview" class="section level1">
 <h1>Overview</h1>
-<p>This post describes an easy way to create {glue} wrappers with custom transformers and lists some examples that can be helpful in common tasks:</p>
+<p>This post describes an easy way to create {glue} wrappers with custom transformers. It also lists some examples that can be helpful in common tasks:</p>
 <ul>
 <li><strong>Transformers</strong> uses a little bit of functional programming magic to create a potentially useful transformers.</li>
 </ul>
@@ -49,8 +49,8 @@ library(stringr)</code></pre>
 <h1>Transformers</h1>
 <p>The task of creating wrapper for <code>glue()</code> essentially consists from two parts:</p>
 <ul>
-<li>Evaluate properly a supplied R expression.</li>
-<li>Modify it to show intended behavior.</li>
+<li>Evaluate properly a supplied R expressions.</li>
+<li>Modify them to show intended behavior.</li>
 </ul>
 <p>The <code>transforming_glue()</code> wrapper does exactly this:</p>
 <pre class="r"><code>transforming_glue &lt;- function(transformer) {
@@ -102,7 +102,7 @@ short_oh &lt;- &quot;Ooh!&quot;
 long_oh &lt;- &quot;Oooooooooooh!&quot;
 glue_width(&quot;This puzzles ({short_oh}) and surprises ({long_oh}) me.&quot;)
 ## This puzzles (Ooh!      ) and surprises (Ooooooo...) me.</code></pre>
-<p><strong>Note</strong> usage of <a href="https://purrr.tidyverse.org/reference/partial.html">partial()</a> here: it takes function along with its arguments values and modifies it by “pre-filling” those arguments.</p>
+<p><strong>Note</strong> usage of <a href="https://purrr.tidyverse.org/reference/partial.html">partial()</a> here: it takes function along with its arguments’ values and modifies it by “pre-filling” those arguments.</p>
 </div>
 <div id="enclose-output" class="section level2">
 <h2>Enclose output</h2>
@@ -152,7 +152,7 @@ glue_bizarro(
 </div>
 <div id="ultimate-example" class="section level2">
 <h2>Ultimate example</h2>
-<p>Using already familiar functional programming technique, we can create an ultimate <code>glue()</code> wrapper as a combination, or rather <code>compose()</code>-ition, of all previous examples. The most important part is supply the in correct order:</p>
+<p>Using already familiar functional programming technique, we can create an ultimate <code>glue()</code> wrapper as a combination, or rather <code>compose()</code>-ition, of all previous examples. The most important part is supply them in correct order:</p>
 <pre class="r"><code>glue_ultimate &lt;- transforming_glue(
   compose(
     enclose,

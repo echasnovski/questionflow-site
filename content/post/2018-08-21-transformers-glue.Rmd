@@ -23,31 +23,31 @@ options(tibble.print_min = 5, tibble.print_max = 16)
 
 # Prologue
 
-Package {[glue](https://glue.tidyverse.org/index.html)} is designed as "small, fast, dependency free" tools to "glue strings to data in R". To put simply, it is a concise and flexible alternative for `paste()` with some additional features:
+Package {[glue](https://glue.tidyverse.org/index.html)} is designed as "small, fast, dependency free" tools to "glue strings to data in R". To put simply, it provides concise and flexible alternatives for `paste()` with some additional features:
 
 ```{r glue-examples}
 library(glue)
 
 x <- 10
-glue("I have {x} apples.")
 paste("I have", x, "apples.")
+glue("I have {x} apples.")
 ```
 
-Recently fate lead me to try using {glue} in a package. I was very pleased to how it makes code more readable, which I believe is a very important during package development. However, I stumbled upon this pretty unexpected behavior:
+Recently, fate lead me to try using {glue} in a package. I was very pleased to how it makes code more readable, which I believe is a very important during package development. However, I stumbled upon this pretty unexpected behavior:
 
 ```{r glue-example-NULL}
 y <- NULL
-str(glue("I have {x} apples and {y} oranges."))
 paste("I have", x, "apples and", y, "oranges.")
+str(glue("I have {x} apples and {y} oranges."))
 ```
 
-If one of the expressions is evaluated into `NULL` then the output becomes empty string. This was unintuitive result and for a while I thought about stop using {glue} as `NULL` is expected to be a valid input. However, if [Jim Hester](https://github.com/jimhester) is package author, you should expect some sort of designed solution to any problem. This time wasn't an exception with [transformers](https://glue.tidyverse.org/articles/transformers.html) functionality.
+If one of the expressions is evaluated into `NULL` then the output becomes empty string. This was unintuitive result and for a while I thought about stop using {glue} because `NULL` is expected to be a valid input. However, if [Jim Hester](https://github.com/jimhester) is package author, you should expect some sort of designed solution to *any* problem. This time wasn't an exception: there is a [transformers](https://glue.tidyverse.org/articles/transformers.html) functionality.
 
 Basically, transformer is a function that changes the output of R expressions the way you want. As I wanted to make `NULL` visible, this is a perfect way to do it.
 
 # Overview
 
-This post describes an easy way to create {glue} wrappers with custom transformers and lists some examples that can be helpful in common tasks:
+This post describes an easy way to create {glue} wrappers with custom transformers. It also lists some examples that can be helpful in common tasks:
 
 - **Transformers** uses a little bit of functional programming magic to create a potentially useful transformers.
 
@@ -65,8 +65,8 @@ library(stringr)
 
 The task of creating wrapper for `glue()` essentially consists from two parts:
 
-- Evaluate properly a supplied R expression.
-- Modify it to show intended behavior.
+- Evaluate properly a supplied R expressions.
+- Modify them to show intended behavior.
 
 The `transforming_glue()` wrapper does exactly this:
 
@@ -127,7 +127,7 @@ long_oh <- "Oooooooooooh!"
 glue_width("This puzzles ({short_oh}) and surprises ({long_oh}) me.")
 ```
 
-**Note** usage of [partial()](https://purrr.tidyverse.org/reference/partial.html) here: it takes function along with its arguments values and modifies it by "pre-filling" those arguments.
+**Note** usage of [partial()](https://purrr.tidyverse.org/reference/partial.html) here: it takes function along with its arguments' values and modifies it by "pre-filling" those arguments.
 
 ## Enclose output
 
@@ -180,7 +180,7 @@ glue_bizarro(
 
 ## Ultimate example
 
-Using already familiar functional programming technique, we can create an ultimate `glue()` wrapper as a combination, or rather `compose()`-ition, of all previous examples. The most important part is supply the in correct order:
+Using already familiar functional programming technique, we can create an ultimate `glue()` wrapper as a combination, or rather `compose()`-ition, of all previous examples. The most important part is supply them in correct order:
 
 ```{r ultimate}
 glue_ultimate <- transforming_glue(
