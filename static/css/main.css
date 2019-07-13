@@ -45,7 +45,14 @@ main {
 }
 
 .toc-h1 {font-size: 22px;}
-.toc-h2 {font-size: 18px;}
+.toc-h2 {
+  font-size: 18px;
+  padding-left: 20px;
+}
+.toc-h3 {
+  font-size: 16px;
+  padding-left: 40px;
+}
 
 /*home page*/
 
