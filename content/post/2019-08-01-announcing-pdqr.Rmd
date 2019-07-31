@@ -1,0 +1,330 @@
+---
+title: Announcing pdqr
+author: Evgeni Chasnovski
+date: '2019-07-31'
+publishDate: '2019-08-01'
+slug: announcing-pdqr
+categories: []
+tags:
+  - rstats
+  - pdqr
+description: "Announcing 'pdqr': package for working with custom distribution functions."
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  eval = TRUE,
+  collapse = TRUE,
+  fig.width = 9, fig.height = 8
+)
+options(tibble.print_min = 5, tibble.print_max = 16)
+```
+
+# Prologue
+
+I have been working on ['pdqr'](https://echasnovski.github.io/pdqr) package for quite some time now. Initially it was intended only for creating custom distribution functions (analogues of base "p", "d", "q", and "r" functions) from numeric sample. However, after couple of breakthrough ideas, it also became a set of tools for transforming and summarizing distributions.
+
+Now I would like to **make it public with hope to get any feedback about the package**: its general design, function and argument names, numerical issues, etc. Please, feel free to [tweet](https://twitter.com/echasnovski) your thoughts (preferably with *#pdqr* hashtag). If you have any suggestions or found a bug, don't hesitate to [create an issue](https://github.com/echasnovski/pdqr/issues).
+
+This announcement post will be in form of a short problem solving cookbook with a little intro to package core structure. For more details go to these resources:
+
+- Package [README](https://echasnovski.github.io/pdqr/index.html) contains more thorough overview of package structure.
+- [Vignettes](https://echasnovski.github.io/pdqr/articles/) represent deeper dive into package's main families of functions.
+
+We'll need the following setup:
+
+```{r library}
+# Currently can only be installed from Github
+library(pdqr)
+library(magrittr)
+
+# Make reproducible randomness
+set.seed(101)
+```
+
+# Package overview
+
+The main structure unit of the package is **pdqr-function**: an actual function which represents distribution with finite support and finite values of probability/density. Distributions with infinite support and/or density can be approximated.
+
+Two types of distributions are supported, which will be called [**pdqr types**](https://echasnovski.github.io/pdqr/reference/meta.html#pdqr-type):
+
+- **Type “discrete”**: random variable has *finite number of output values*. Pdqr-function is explicitly defined by the collection of its values with their corresponding probabilities. Usually used when underlying distribution is discrete (even if in theory there are infinite number of output values).
+- **Type “continuous”**: random variable has *infinite number of output values in the form of continuous random variable*. It is explicitly defined by piecewise-linear density function with finite support and values. Usually used when underlying distribution is continuous (even if in theory it has infinite support and/or density values).
+
+Pdqr-function can represent distribution in 4 different ways which resemble base R design. These ways are determined by its [**pdqr class**](https://echasnovski.github.io/pdqr/reference/meta.html#pdqr-class):
+
+- *P-function* (pdqr-functions of class "p") returns value of cumulative distribution function (probability of random variable being not more than certain value) at points `q` (its numeric vector input).
+- *D-function* returns value of probability mass or density function (depending on pdqr type) at points `x` (its numeric vector input).
+- *Q-function* returns value of quantile function at points `p` (its numeric vector input).
+- *R-function* generates random sample of size `n` (its single number input) from distribution.
+
+Package 'pdqr' has the following main families of functions:
+
+- [new_*()](https://echasnovski.github.io/pdqr/reference/new-pdqr.html) functions for creating pdqr-functions of specific class.
+- [as_*()](https://echasnovski.github.io/pdqr/reference/as-pdqr.html) functions for changing class of pdqr-functions.
+- [form_*()](https://echasnovski.github.io/pdqr/reference/index.html#section-transform) functions for transforming pdqr-functions and underlying distributions. Transformations also can be done with common base mathematical operations, like `+`, `*`, `exp`, `>` etc.
+- [summ_*()](https://echasnovski.github.io/pdqr/reference/index.html#section-summarize) functions for summarizing distributions.
+    - [region_*()](https://echasnovski.github.io/pdqr/reference/index.html#section-regions) functions to work with special type of summary called "region".
+
+**Note** that implemented approaches often emphasize approximate and numerical solutions:
+
+- All distributions assume **finite support** (output values are bounded from below and above) and **finite values of density function** (density function in case of “continuous” type can’t go to infinity).
+- Some methods implemented with **simulation techniques**.
+
+
+# Custom distributions
+
+## Estimate distribution from sample
+
+**Problem** Create a pdqr-function representing an estimation of sample's distribution.
+
+**Solution** The most important decision here is about distribution's type: discrete or continuous. In first case, any `new_*()` function will use unique values of sample as distribution's outcomes, and probabilities will be estimated by tabulating and normalizing:
+
+```{r new_discrete}
+# Any pdqr class can be used to represent distribution
+mpg_dis <- new_d(mtcars$mpg, type = "discrete")
+
+# Pdqr-functions have `print()` methods with concise summary
+mpg_dis
+
+# To visually inspect pdqr-function, use `plot()`
+plot(mpg_dis)
+```
+
+For continuous type, [density()](https://rdrr.io/r/stats/density.html) function will be used to estimate distribution's density (if sample has 2 or more elements). **Note** that arguments of `density()` will affect greatly the output distribution (as always in kernel density estimation).
+
+```{r new_continuous}
+mpg_con <- new_d(mtcars$mpg, type = "continuous")
+mpg_con
+
+plot(mpg_con)
+```
+
+These newly created functions can be used to obtain probability or density for any numbers:
+
+```{r new_usage}
+# Probabilities
+mpg_dis(20:25)
+
+# Density values
+mpg_con(20:25)
+```
+
+## Estimate distribution of positive values
+
+**Problem** Create a pdqr-function representing an estimation of sample's distribution with assumption that it can produce only positive values.
+
+**Solution** This common task is done in two steps:
+
+- Estimate sample distribution, as in previous step. It can result into unwanted distribution properties, like producing negative values. This is a known issue of boundary problem in kernel density estimation.
+- Modify distribution to have only positive support with [form_resupport()](https://echasnovski.github.io/pdqr/reference/form_resupport.html). It has several methods with default one (`"reflect"`) recommended to deal with boundary correction. It "reflects" density tails "inside" of a desired support interval. Its output for bounded distributions is usually a closer estimation of "true distribution".
+
+```{r estimate-positive}
+# Exponential distribution can have only positive values
+exp_sample <- rexp(100)
+d_exp <- new_d(exp_sample, type = "continuous")
+
+  # Use `NA` to indicate that certain edge of support should remain unchanged
+d_exp_corr <- form_resupport(d_exp, support = c(0, NA))
+  # Original kernel density estimation
+plot(
+  d_exp, main = "Different estimations of exponential distribution",
+  ylim = c(0, 1)
+)
+  # Corrected density
+lines(d_exp_corr, col = "blue")
+  # Reference distribution
+lines(seq(0, 6, by = 0.01), dexp(seq(0, 6, by = 0.01)), col = "red")
+```
+
+## Generate sample similar to input
+
+**Problem** Generate sample of certain size from distribution that is an estimate to original sample's distribution.
+
+**Solution** R-functions are used for generating samples. Currently there are two ways of creating them:
+
+```{r generate-sample}
+# Create new r-function from sample
+r_mpg_dis <- new_r(mtcars$mpg, type = "discrete")
+r_mpg_dis(n = 10)
+
+# Convert existing pdqr-function to be r-function
+r_mpg_con <- as_r(mpg_con)
+r_mpg_con(n = 10)
+```
+
+# Common distributions
+
+## Compute sum of random variables
+
+**Problem** Compute pdqr-function representing sum of two independent random variables (for example, both being standard normal distributions).
+
+**Solution** First, you need to create pdqr-function for random variables. Here standard normal distribution will be used. This can be done by converting base R distribution functions to be pdqr-functions. After that, using `+` gives distribution of sum of two random variables:
+
+```{r sum-norm}
+(d_norm <- as_d(dnorm))
+(d_norm_sum <- d_norm + d_norm)
+
+plot(d_norm_sum, main = "Sum of two standard normal distributions")
+  # "True" solution
+lines(as_d(dnorm, sd = sqrt(2)), col = "red")
+```
+
+Here you can see two very important features of 'pdqr':
+
+- Normal distribution is approximated with piecewise-linear density on finite support (10000 intervals are used by default).
+- Distribution of sum of random variables is computed with simulation: big samples are drawn from both distributions, their sum is computed (resulting in a sample from sum of random variables), and target distribution is created using one of `new_*()` functions.
+
+## Compute mixture
+
+**Problem** Compute mixture of distributions with different weights.
+
+**Solution** Specifically for this task, there is a [form_mix()](https://echasnovski.github.io/pdqr/reference/form_mix.html) function. It takes a list of pdqr-functions with, possibly, a vector of their weights in mixture:
+
+```{r mixture}
+d_norm_list <- list(as_d(dnorm), as_d(dnorm, mean = 3, sd = 0.7))
+mix_weights <- c(0.2, 0.8)
+(d_norm_mix <- form_mix(d_norm_list, weights = mix_weights))
+
+plot(d_norm_mix)
+
+# As with other pdqr-functions, it can be used for obtaining values
+d_norm_mix(seq(-1, 1, by = 0.2))
+```
+
+# Summaries
+
+Usual workflow for computing summaries is as follows:
+
+- Estimate all necessary distributions by creating pdqr-functions.
+- Make transformations appropriate for summary, which will result into one distribution.
+- Compute summary of distribution.
+
+**Notes**:
+
+- Although this approach is very flexible in terms of computed summaries, it doesn't take care of possible bias when estimating from a sample.
+- When initially dealing with one distribution, this task can be conveniently written with [magrittr](https://magrittr.tidyverse.org/)'s pipe operator `%>%`.
+
+## Compute winsorized sample mean
+
+**Problem** Compute 10% [winsorized sample mean](https://en.wikipedia.org/wiki/Winsorized_mean).
+
+**Solution** This can be done by purposefully separating task into three steps:
+
+- Estimate sample distribution. It can have any type, depending on problem. To emulate traditional sample estimates, "discrete" type is better suited.
+- Transform distribution by winsorizing tails. There is a [form_tails()](https://echasnovski.github.io/pdqr/reference/form_tails.html) functions, which takes pdqr-function and returns pdqr-function for distribution with modified tails (based on supplied method).
+- Compute mean of winsorized distribution. **Note** that in case of other statistic (like variance, skewness, etc.) no bias correction is done: output is a summary of distribution created on previous step(s).
+
+```{r winsorized-mean}
+mtcars$mpg %>% 
+  new_d(type = "discrete") %>% 
+  form_tails(level = 0.1, method = "winsor", direction = "both") %>% 
+  summ_mean()
+```
+
+## Compute mode
+
+**Problem** Compute mode of distribution based on its sample.
+
+**Solution** Use [summ_mode()](https://echasnovski.github.io/pdqr/reference/summ_center.html):
+
+```{r mode}
+mtcars$mpg %>% 
+  # Using "discrete" type will compute the most frequent element of sample
+  new_d(type = "continuous") %>% 
+  summ_mode()
+```
+
+## Compute highest density region
+
+**Problem** Compute 90% [highest density region](https://stats.stackexchange.com/a/148475) (HDR) of a distribution.
+
+**Solution** There is a [summ_hdr()](https://echasnovski.github.io/pdqr/reference/summ_hdr.html) function for this task. On a one dimensional line, HDR can only be a union of disjoint intervals. So the output of `summ_hdr()` is a *region* - data frame with rows representing different intervals of the union and two columns "left" and "right" for left and right ends of intervals.
+
+```{r summ_hdr}
+norm_mix <- form_mix(
+  list(as_d(dnorm), as_d(dnorm, mean = 5)),
+  weights = c(0.3, 0.7)
+)
+(norm_mix_hdr <- summ_hdr(norm_mix, level = 0.9))
+```
+
+There is a [region_*()](https://echasnovski.github.io/pdqr/reference/region.html) family of functions to work with regions. Here are several examples:
+
+```{r regions}
+# Test if number is inside region
+region_is_in(norm_mix_hdr, x = c(-10, 0, 3, 10))
+
+# Compute region width (sum of width of all disjoint intervals)
+region_width(norm_mix_hdr)
+
+# Draw regions
+plot(norm_mix)
+region_draw(norm_mix_hdr)
+```
+
+## Compute separation threshold
+
+**Problem** Compute a numerical threshold that optimally separates two distributions.
+
+**Solution** There is a [summ_separation()](https://echasnovski.github.io/pdqr/reference/summ_separation.html) function designed specifically for this type of problem. It has several methods with default one being "KS" (short for "Kolmogorov-Smirnov"): optimal separation is done at point where two CDFs differ the most.
+
+```{r separation}
+x <- rnorm(100)
+y <- rnorm(100, mean = 2)
+# Here "true optimal" is 1
+summ_separation(f = new_d(x, "continuous"), g = new_d(y, "continuous"))
+```
+
+## Compute probability of being greater
+
+**Problem** Compute a probability that random draw from one distribution is greater that random draw from another distribution.
+
+**Solution** These type of summaries are usually done in two steps:
+
+- Compute a **boolean pdqr-function** that represents a result of comparison between mentioned two random draws. It is a special kind of discrete distribution: it only has values 0 and 1 representing estimated relation being false and true respectively. Usually, they are the output of base R comparison operators: [>, <, ==](https://echasnovski.github.io/pdqr/reference/methods-group-generic.html#ops), etc.
+- Extract a probability of a relation being true.
+
+```{r greater}
+d_norm <- as_d(dnorm)
+d_unif <- as_d(dunif)
+
+# The output of `>` is a boolean pdqr-function. For convenience, printing
+# displays also a probability of 1, which is a probability of relation being
+# true. In this case, it should be read as "probability that random draw from
+# first distribution is greater than a random draw from second one".
+(norm_geq_unif <- d_norm > d_unif)
+
+# Extract desired probability
+summ_prob_true(norm_geq_unif)
+```
+
+## Compute distance between distributions
+
+**Problem** Compute distance between two distributions: positive value indicating "how far" two distributions are from each other. This is usually needed when comparing random outcomes of two (or more) options.
+
+**Solution** There is a [summ_distance()](https://echasnovski.github.io/pdqr/reference/summ_distance.html) function with many methods.
+
+```{r summ_distance}
+# Default method is "KS" (short for "Kolmogorov-Smirnov"): the biggest
+# absolute difference between two CDFs
+summ_distance(d_norm, d_unif, method = "KS")
+
+# There is also "wass" method (short for "Wasserstein"): "average path density
+# point should go while transforming from one into another"
+summ_distance(d_norm, d_unif, method = "wass")
+```
+
+# Epilogue
+
+- Package 'pdqr' provides many tools for working with custom distribution functions.
+- Consider using this package for solving your practical problems. Please feel free to send me your feedback, ideas, and suggestions.
+
+`r blogdown::shortcode("spoiler_details", summary = '\"sessionInfo()\"')`
+
+```{r sessionInfo, eval = TRUE}
+sessionInfo()
+```
+
+`r blogdown::shortcode("/spoiler_details")`
