@@ -1,0 +1,228 @@
+---
+title: Arguments of stats::density()
+author: Evgeni Chasnovski
+date: '2019-08-06'
+publishDate: '2019-08-06'
+slug: arguments-of-stats-density
+categories: []
+tags:
+  - rstats
+  - pdqr
+description: "Animated illustrations of how arguments affect output of `stats::density()`."
+---
+
+
+
+<div id="prologue" class="section level1">
+<h1>Prologue</h1>
+<p>One of the “go to” functions for <a href="https://en.wikipedia.org/wiki/Kernel_density_estimation">kernel density estimation</a> is <a href="https://rdrr.io/r/stats/density.html">density()</a> from base R package ‘stats’. Given numeric sample, it returns a set of x-y pairs on estimated density curve. It is also a main “workhorse” for estimating continuous distributions in my <a href="https://echasnovski.github.io/pdqr">‘pdqr’</a> package.</p>
+<p>However, output of <code>density()</code> highly depends on values of its arguments. Some of them define kernel density estimation algorithm, and the others are responsible for different properties of output set of x-y pairs.</p>
+<p>So in this post I illustrate with animations how changing arguments of <code>density()</code> changes the output.</p>
+</div>
+<div id="overview" class="section level1">
+<h1>Overview</h1>
+<p>The illustration workflow will be as follows:</p>
+<ul>
+<li>For a certain <code>density()</code> argument create a set of its values that will help illustrating how it affects the output.</li>
+<li>For every value <code>a</code> of argument <code>x</code> compute <code>density(mtcars$mpg, x = a)</code> (all other arguments having default values). This results into a set of “density curves”: piecewise-linear curves drawn through x-y points.</li>
+<li>Animate evolution of density curves as argument value changes from first to last.</li>
+</ul>
+<p>We’ll need the following setup (including main helper function <code>density_anim()</code> for creating animations):</p>
+<pre class="r"><code>library(tidyverse, warn.conflicts = FALSE)
+library(gganimate)
+library(rlang, warn.conflicts = FALSE)
+
+# Create refernce default `density()` curve
+default_density_curve &lt;- as_tibble(density(mtcars$mpg)[c(&quot;x&quot;, &quot;y&quot;)])
+
+# Helper function to create density animation. Here `...` should be a vector
+# of argument values of interest (passed as that argument), and `duration` is a
+# total duration of animation in seconds.
+density_anim &lt;- function(..., duration = 10) {
+  density_mpg &lt;- function(...) {
+    as_tibble(density(mtcars$mpg, ...)[c(&quot;x&quot;, &quot;y&quot;)])
+  }
+  
+  # `...` should consist only from one input
+  dots &lt;- list(...)
+  arg_name &lt;- names(dots)[1]
+  vals &lt;- dots[[1]]
+  
+  # Take into account that input might be a list (and thus not suitable for
+  # `transition_states()`)
+  if (is.list(vals)) {
+    arg &lt;- paste0(arg_name, &quot;_id&quot;)
+    states &lt;- seq_along(vals)
+  } else {
+    arg &lt;- arg_name
+    states &lt;- vals
+  }
+    # Converting to factor to preserve order of argument values in animation
+  states &lt;- factor(states, levels = unique(states))
+  
+  anim &lt;- tibble(!!sym(arg) := states) %&gt;% 
+    # Create points on density curves
+    mutate(den_points = pmap(dots, density_mpg)) %&gt;% 
+    unnest(den_points) %&gt;% 
+    # Define animation
+    ggplot(aes(x, y, group = !!sym(arg))) +
+      # Default curve for reference
+      geom_line(
+        data = default_density_curve,
+        mapping = aes(x, y), inherit.aes = FALSE,
+        color = &quot;grey80&quot;, size = 1.2
+      ) +
+      # Curves for different argument values
+      geom_line(size = 1.5) +
+      transition_states(!!sym(arg)) +
+      ggtitle(
+        label = &quot;density() with `{arg} = {previous_state}`&quot;,
+        subtitle = &quot;Grey line is default density() output&quot;
+      ) +
+      theme_classic() +
+      theme(plot.title = element_text(size = 18))
+  
+  animate(anim, duration = duration, fps = 12, start_pause = 6, end_pause = 6)
+}</code></pre>
+</div>
+<div id="estimation-parameters" class="section level1">
+<h1>Estimation parameters</h1>
+<p>Arguments that define kernel density estimation procedure are: <code>bw</code>, <code>adjust</code>, <code>kernel</code>, and <code>weights</code>. There are also <code>window</code> and <code>width</code>, but they seem to be present only for backward compatibility and shouldn’t be used directly.</p>
+<div id="bandwidth-bw" class="section level2">
+<h2>Bandwidth <code>bw</code></h2>
+<p>Argument <code>bw</code> is responsible for computing <a href="https://en.wikipedia.org/wiki/Kernel_density_estimation#Bandwidth_selection">bandwith</a> of kernel density estimation: one of the main parameters that greatly affect the output. It can be specified as either algorithm of computation or directly as number. Because actual bandwidth is computed as <code>adjust*bw</code> (<code>adjust</code> is another <code>density()</code> argument, which is explored in the next section), here we will see how different algorithms compute bandwidths, and the effect of changing bandwidth numeric value will be shown in section about <code>adjust</code>.</p>
+<p>There are 5 available algorithms: “nrd0”, “nrd”, “ucv”, “bcv”, “SJ”. Here is an animation of their effect:</p>
+<pre class="r"><code>density_anim(bw = c(&quot;nrd0&quot;, &quot;nrd&quot;, &quot;ucv&quot;, &quot;bcv&quot;, &quot;SJ&quot;), duration = 5)</code></pre>
+<p><img src="/post/2019-08-08-arguments-of-stats-density_files/figure-html/arg_bw-1.gif" /><!-- --></p>
+<p>As you can see, density curve changes, but not drastically. At least the whole shape seems to be somewhat preserved.</p>
+</div>
+<div id="adjusting-bandwidth-adjust" class="section level2">
+<h2>Adjusting bandwidth <code>adjust</code></h2>
+<p>To easily “specify values like ‘half the default’ bandwidth”, there is an argument <code>adjust</code>. Bigger values indicate greater bandwidth that is actually used. Zero results into zero bandwidth (so never should be used), one (default) - into originally computed by chosen algorithm.</p>
+<pre class="r"><code>density_anim(adjust = seq(0.1, 2, by = 0.05))</code></pre>
+<p><img src="/post/2019-08-08-arguments-of-stats-density_files/figure-html/arg_adjust-1.gif" /><!-- --></p>
+<p>Changing <code>adjust</code> leads to very noticeable changes in output shape of density curve: bigger values give smoother curves.</p>
+</div>
+<div id="kernel-type-kernel" class="section level2">
+<h2>Kernel type <code>kernel</code></h2>
+<p>Argument <code>kernel</code> defines the shape of kernel which will be used. There are 7 possible kernels in total which are shown in the following animation:</p>
+<pre class="r"><code>density_anim(
+  kernel = c(&quot;gaussian&quot;, &quot;epanechnikov&quot;, &quot;rectangular&quot;, &quot;triangular&quot;,
+             &quot;biweight&quot;, &quot;cosine&quot;, &quot;optcosine&quot;),
+  duration = 7
+)</code></pre>
+<p><img src="/post/2019-08-08-arguments-of-stats-density_files/figure-html/arg_kernel-1.gif" /><!-- --></p>
+<p>Choice of kernel function also considerably affects the output shape of density curve, but not as greatly as <code>adjust</code>. Most notable difference from default “gaussian” kernel is with “rectangular” kernel: result, unsurprisingly, is “more rectangular”.</p>
+</div>
+<div id="observation-importance-weights" class="section level2">
+<h2>Observation importance <code>weights</code></h2>
+<p>Argument <code>weights</code> should be used if some observations are considered to be “more important” and should be used more as a reference than the other ones. It should be a numeric vector with the same length as input sample <code>x</code>. <strong>Note</strong> that for output to be a true density plot, sum of <code>weights</code> should be 1.</p>
+<p>To illustrate its effect, lets construct a sequence of <code>weights</code> each of which makes one observation having 10 times more weight than any other (that contribute equally). Order of those observations we will choose so that they progress from the smallest to the biggest.</p>
+<pre class="r"><code>weights_list &lt;- lapply(order(mtcars$mpg), function(i) {
+  res &lt;- c(rep(1, times = i-1), 10, rep(1, times = length(mtcars$mpg)-i))
+  
+  res / sum(res)
+})
+
+density_anim(weights = weights_list)</code></pre>
+<p><img src="/post/2019-08-08-arguments-of-stats-density_files/figure-html/arg_weights-1.gif" /><!-- --></p>
+<p>As expected from <code>weights_list</code> construction, one can see a “spike” that “travels” from left to right, indicating the position of “most important” observation.</p>
+</div>
+</div>
+<div id="output-value-parameters" class="section level1">
+<h1>Output value parameters</h1>
+<p>Arguments that define structure of output are: <code>n</code>, <code>from</code>, <code>to</code>, and <code>cut</code>. There are also <code>give.Rkern</code> (can be used to return computed “canonical bandwidth”) and <code>na.rm</code> (whether to remove <code>NA</code> values from input), which are not of particular interest here.</p>
+<div id="number-of-points-n" class="section level2">
+<h2>Number of points <code>n</code></h2>
+<p><code>n</code> is responsible for number of returned x-y points. They are equally spaced on the specified range (see next sections). Default value is 512 (taken as a power of two for performance reasons of <a href="https://rdrr.io/r/stats/fft.html">fft()</a>), but to illustrate its effect on output lets use sequence from 2 to 50.</p>
+<pre class="r"><code>density_anim(n = 2:50)</code></pre>
+<p><img src="/post/2019-08-08-arguments-of-stats-density_files/figure-html/arg_n-1.gif" /><!-- --></p>
+<p>As you can see, in this case values higher than 40 already give considerably small errors (compared to “true curve” when <code>n</code> is infinity). However, if the underlying curve isn’t that smooth (for example, in case of low <code>adjust</code>) it is a good idea to use more points with default 512 being enough for most practical situations.</p>
+</div>
+<div id="left-edge-from" class="section level2">
+<h2>Left edge <code>from</code></h2>
+<p>If specified, <code>from</code> defines a left edge of sequence of “x” points, at which density curve is evaluated. For illustration, lets use sequence from minimum to maximum values of <code>mtcars$mpg</code>.</p>
+<pre class="r"><code>from_vec &lt;- seq(from = min(mtcars$mpg), to = max(mtcars$mpg), length.out = 20)
+
+density_anim(from = round(from_vec, digits = 1))</code></pre>
+<p><img src="/post/2019-08-08-arguments-of-stats-density_files/figure-html/arg_from-1.gif" /><!-- --></p>
+<p>Note that when <code>from</code> is equal to the smallest value of input numeric vector, it is still greater than default left edge of density curve. For explanation of this “extending property” of default curve, see section about <code>cut</code>.</p>
+</div>
+<div id="right-edge-to" class="section level2">
+<h2>Right edge <code>to</code></h2>
+<p>Argument <code>to</code> has the same nature as <code>from</code>, but defines right edge of points.</p>
+<pre class="r"><code>to_vec &lt;- rev(from_vec)
+
+density_anim(to = round(to_vec, digits = 1))</code></pre>
+<p><img src="/post/2019-08-08-arguments-of-stats-density_files/figure-html/arg_to-1.gif" /><!-- --></p>
+<p>Note again, that value of <code>to</code> equal to maximum of input numeric vector is not enough to see the default behavior.</p>
+</div>
+<div id="range-extension-cut" class="section level2">
+<h2>Range extension <code>cut</code></h2>
+<p>By default, sequence of <code>n</code> x-y points is computed as follows:</p>
+<ul>
+<li>Equally spaced grid of <code>n</code> “x” points is computed between <code>from</code> and <code>to</code> which by default are computed as being “<code>cut*bw</code> outside of <code>range(x)</code>”. In other words, default range is extended to left and right of <code>range(x)</code> by the amount of “canonical bandwidth” (computed by <code>bw</code> algorithm) multiplied by argument <code>cut</code> (default being 3).</li>
+<li>“Y” points are taken from “true” curve of kernel density estimate.</li>
+</ul>
+<pre class="r"><code>density_anim(cut = seq(3, 0, by = -0.2))</code></pre>
+<p><img src="/post/2019-08-08-arguments-of-stats-density_files/figure-html/arg_cut-1.gif" /><!-- --></p>
+<p>When <code>cut</code> changes from 3 to 0, range of computed points shrinks from default one to range of input numeric vector. The fact that by default <code>density()</code> computes set of points outside of original range I call its “extending property”. <strong>Note</strong> that <code>cut</code> can also be negative, which means reduced input range.</p>
+<p>So by default, <code>density()</code> extends range of input vector. The problem is that it can contradict natural constraints on input. For example, what if you want to estimate density for probability distribution of <em>value that can only be positive</em>? Dealing with boundary values during kernel density estimation is an important topic and it is called a boundary correction problem. One of possible solutions is to use <a href="https://echasnovski.github.io/pdqr/reference/form_resupport.html">form_resupport()</a> function from ‘pdqr’ package.</p>
+</div>
+</div>
+<div id="epilogue" class="section level1">
+<h1>Epilogue</h1>
+<ul>
+<li><code>density()</code> provides reach possibilities for doing kernel density estimation, which should be carefully studied to use them wisely.</li>
+<li>Using <a href="https://gganimate.com/">‘gganimate’</a> for creating animated illustrations is fun.</li>
+</ul>
+{{% spoiler_details summary="sessionInfo()" %}}
+<pre class="r"><code>sessionInfo()
+## R version 3.6.1 (2019-07-05)
+## Platform: x86_64-pc-linux-gnu (64-bit)
+## Running under: Ubuntu 18.04.2 LTS
+## 
+## Matrix products: default
+## BLAS:   /usr/lib/x86_64-linux-gnu/openblas/libblas.so.3
+## LAPACK: /usr/lib/x86_64-linux-gnu/libopenblasp-r0.2.20.so
+## 
+## locale:
+##  [1] LC_CTYPE=ru_UA.UTF-8       LC_NUMERIC=C              
+##  [3] LC_TIME=ru_UA.UTF-8        LC_COLLATE=ru_UA.UTF-8    
+##  [5] LC_MONETARY=ru_UA.UTF-8    LC_MESSAGES=ru_UA.UTF-8   
+##  [7] LC_PAPER=ru_UA.UTF-8       LC_NAME=C                 
+##  [9] LC_ADDRESS=C               LC_TELEPHONE=C            
+## [11] LC_MEASUREMENT=ru_UA.UTF-8 LC_IDENTIFICATION=C       
+## 
+## attached base packages:
+## [1] stats     graphics  grDevices utils     datasets  methods   base     
+## 
+## other attached packages:
+##  [1] rlang_0.3.4     gganimate_1.0.3 forcats_0.4.0   stringr_1.4.0  
+##  [5] dplyr_0.8.1     purrr_0.3.2     readr_1.3.1     tidyr_0.8.3    
+##  [9] tibble_2.1.3    ggplot2_3.1.1   tidyverse_1.2.1
+## 
+## loaded via a namespace (and not attached):
+##  [1] Rcpp_1.0.1         lubridate_1.7.4    lattice_0.20-38   
+##  [4] prettyunits_1.0.2  png_0.1-7          class_7.3-15      
+##  [7] assertthat_0.2.1   digest_0.6.19      R6_2.4.0          
+## [10] cellranger_1.1.0   plyr_1.8.4         backports_1.1.4   
+## [13] evaluate_0.14      e1071_1.7-2        httr_1.4.0        
+## [16] blogdown_0.12      pillar_1.4.1       progress_1.2.2    
+## [19] lazyeval_0.2.2     readxl_1.3.1       rstudioapi_0.10   
+## [22] gifski_0.8.6       rmarkdown_1.13     labeling_0.3      
+## [25] munsell_0.5.0      broom_0.5.2        compiler_3.6.1    
+## [28] modelr_0.1.4       xfun_0.7           pkgconfig_2.0.2   
+## [31] htmltools_0.3.6    tidyselect_0.2.5   lpSolve_5.6.13.2  
+## [34] bookdown_0.11      codetools_0.2-16   crayon_1.3.4      
+## [37] withr_2.1.2        sf_0.7-7           grid_3.6.1        
+## [40] nlme_3.1-140       jsonlite_1.6       gtable_0.3.0      
+## [43] DBI_1.0.0          magrittr_1.5       units_0.6-3       
+## [46] scales_1.0.0       KernSmooth_2.23-15 cli_1.1.0         
+## [49] stringi_1.4.3      farver_1.1.0       xml2_1.2.0        
+## [52] generics_0.0.2     transformr_0.1.1   tools_3.6.1       
+## [55] glue_1.3.1         tweenr_1.0.1       hms_0.4.2         
+## [58] yaml_2.2.0         colorspace_1.4-1   classInt_0.3-3    
+## [61] rvest_0.3.4        knitr_1.23         haven_2.1.0</code></pre>
+{{% /spoiler_details %}}
+</div>
