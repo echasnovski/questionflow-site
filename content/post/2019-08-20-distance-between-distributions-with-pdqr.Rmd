@@ -1,0 +1,62 @@
+---
+title: Distance between distributions with pdqr
+author: Evgeni Chasnovski
+date: '2019-08-20'
+publishDate: '2019-08-20'
+slug: distance-between-distributions-with-pdqr
+categories: []
+tags:
+  - rstats
+  - pdqr
+description: "Description of several methods for computing distance between probability distributions and their implementation in 'pdqr' package."
+---
+
+# Prologue
+
+Distance is an important topic in data studies because it is a foundation of quantifying relations between objects. Its broad definition is "a numerical measurement of how far apart objects or points are". It can be imagined as a function that takes two arguments and returns a (usually non-negative) number: the more the value the more "far apart" (different) input objects are. Zero value indicates that two objects are "identical under this distance".
+
+In mathematics distance function (commonly named "metric") has more rigorous definition. It should return **non-negative number** with zero indicating that two input objects represent *the same object*; output shouldn't depend on order of input objects (**symmetry**); [triangle inequality](https://en.wikipedia.org/wiki/Triangle_inequality) should be true for any three objects. Functions that don't have all these qualities are still useful in many cases and often also called "distance" (but not "metric").
+
+As we talk about objects quite abstractly, nothing forbids them from being probability distributions. In fact, this is a very useful thing to consider in terms of statistical inference. On of the most common practical tasks is to answer the question "Are these two groups of numbers represent (are samples from) one or different probability distributions?". Essentially, the process of answering this question is to first estimate two distributions based on two groups of numbers and compute some sort of distance between them: if it is low enough, then groups come from one distribution. Because of this important application, distance between probability distributions is also called "statistical distance".
+
+In ['pdqr'](https://echasnovski.github.io/pdqr/) the main function for computing distance between distributions is [summ_distance()](https://echasnovski.github.io/pdqr/reference/summ_distance.html). It takes two arguments `f` and `g` for probability distribution objects (in form of [pdqr-functions](https://echasnovski.github.io/pdqr/reference/meta.html)) and an optional `method` argument indicating which distance will be computed. All methods always return non-negative number and are symmetrical (don't depend on order of inputs). However, some methods can return zero for different distributions and triangular inequality is often doesn't hold.
+
+In this post we will see main approaches of computing statistical distance with 'pdqr' and their properties. We will need the following setup:
+
+```{r init}
+library(pdqr)
+```
+
+# Overview
+
+# Probability based distance
+
+## Kolmogorov-Smirnov
+
+## Total variation
+
+## Method "compare"
+
+# Metric based distance
+
+## Wasserstein
+
+## Cramer
+
+## Method "align"
+
+# Entropy based distance
+
+## Method "entropy"
+
+## summ_entropy()
+
+# Epilogue
+
+`r blogdown::shortcode("spoiler_details", summary = '\"sessionInfo()\"')`
+
+```{r sessionInfo, eval = TRUE}
+sessionInfo()
+```
+
+`r blogdown::shortcode("/spoiler_details")`
