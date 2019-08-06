@@ -15,15 +15,15 @@ description: "Animated illustrations of how arguments affect output of `stats::d
 
 <div id="prologue" class="section level1">
 <h1>Prologue</h1>
-<p>One of the “go to” functions for <a href="https://en.wikipedia.org/wiki/Kernel_density_estimation">kernel density estimation</a> is <a href="https://rdrr.io/r/stats/density.html">density()</a> from base R package ‘stats’. Given numeric sample, it returns a set of x-y pairs on estimated density curve. It is also a main “workhorse” for estimating continuous distributions in my <a href="https://echasnovski.github.io/pdqr">‘pdqr’</a> package.</p>
+<p>In R, one of the “go to” functions for <a href="https://en.wikipedia.org/wiki/Kernel_density_estimation">kernel density estimation</a> is <a href="https://rdrr.io/r/stats/density.html">density()</a> from base R package ‘stats’. Given numeric sample, it returns a set of x-y pairs on estimated density curve. It is also a main “workhorse” for estimating continuous distributions in my <a href="https://echasnovski.github.io/pdqr">‘pdqr’</a> package.</p>
 <p>However, output of <code>density()</code> highly depends on values of its arguments. Some of them define kernel density estimation algorithm, and the others are responsible for different properties of output set of x-y pairs.</p>
-<p>So in this post I illustrate with animations how changing arguments of <code>density()</code> changes the output.</p>
+<p>In this post I illustrate with animations how changing arguments of <code>density()</code> changes the output.</p>
 </div>
 <div id="overview" class="section level1">
 <h1>Overview</h1>
 <p>The illustration workflow will be as follows:</p>
 <ul>
-<li>For a certain <code>density()</code> argument create a set of its values that will help illustrating how it affects the output.</li>
+<li>For a certain <code>density()</code> argument create a set of its values that will help to illustrate how it affects the output.</li>
 <li>For every value <code>a</code> of argument <code>x</code> compute <code>density(mtcars$mpg, x = a)</code> (all other arguments having default values). This results into a set of “density curves”: piecewise-linear curves drawn through x-y points.</li>
 <li>Animate evolution of density curves as argument value changes from first to last.</li>
 </ul>
@@ -57,7 +57,7 @@ density_anim &lt;- function(..., duration = 10) {
     arg &lt;- arg_name
     states &lt;- vals
   }
-    # Converting to factor to preserve order of argument values in animation
+    # Convert to factor to preserve order of argument values in animation
   states &lt;- factor(states, levels = unique(states))
   
   anim &lt;- tibble(!!sym(arg) := states) %&gt;% 
@@ -72,7 +72,7 @@ density_anim &lt;- function(..., duration = 10) {
         mapping = aes(x, y), inherit.aes = FALSE,
         color = &quot;grey80&quot;, size = 1.2
       ) +
-      # Curves for different argument values
+      # Main curves for different argument values
       geom_line(size = 1.5) +
       transition_states(!!sym(arg)) +
       ggtitle(
@@ -90,7 +90,7 @@ density_anim &lt;- function(..., duration = 10) {
 <p>Arguments that define kernel density estimation procedure are: <code>bw</code>, <code>adjust</code>, <code>kernel</code>, and <code>weights</code>. There are also <code>window</code> and <code>width</code>, but they seem to be present only for backward compatibility and shouldn’t be used directly.</p>
 <div id="bandwidth-bw" class="section level2">
 <h2>Bandwidth <code>bw</code></h2>
-<p>Argument <code>bw</code> is responsible for computing <a href="https://en.wikipedia.org/wiki/Kernel_density_estimation#Bandwidth_selection">bandwith</a> of kernel density estimation: one of the main parameters that greatly affect the output. It can be specified as either algorithm of computation or directly as number. Because actual bandwidth is computed as <code>adjust*bw</code> (<code>adjust</code> is another <code>density()</code> argument, which is explored in the next section), here we will see how different algorithms compute bandwidths, and the effect of changing bandwidth numeric value will be shown in section about <code>adjust</code>.</p>
+<p>Argument <code>bw</code> is responsible for computing <a href="https://en.wikipedia.org/wiki/Kernel_density_estimation#Bandwidth_selection">bandwith</a> of kernel density estimation: one of the main parameters that greatly affect the output. It can be specified as either algorithm of computation or directly as number. Because actual bandwidth is computed as <code>adjust*bw</code> (<code>adjust</code> is another <code>density()</code> argument, which is explored in the next section), here we will see how different algorithms compute bandwidths, and the effect of changing numeric value of bandwidth will be shown in section about <code>adjust</code>.</p>
 <p>There are 5 available algorithms: “nrd0”, “nrd”, “ucv”, “bcv”, “SJ”. Here is an animation of their effect:</p>
 <pre class="r"><code>density_anim(bw = c(&quot;nrd0&quot;, &quot;nrd&quot;, &quot;ucv&quot;, &quot;bcv&quot;, &quot;SJ&quot;), duration = 5)</code></pre>
 <p><img src="/post/2019-08-08-arguments-of-stats-density_files/figure-html/arg_bw-1.gif" /><!-- --></p>
@@ -116,7 +116,7 @@ density_anim &lt;- function(..., duration = 10) {
 </div>
 <div id="observation-importance-weights" class="section level2">
 <h2>Observation importance <code>weights</code></h2>
-<p>Argument <code>weights</code> should be used if some observations are considered to be “more important” and should be used more as a reference than the other ones. It should be a numeric vector with the same length as input sample <code>x</code>. <strong>Note</strong> that for output to be a true density plot, sum of <code>weights</code> should be 1.</p>
+<p>Argument <code>weights</code> should be used if some observations are considered to be “more important” and are “more reference” than the other ones. It should be a numeric vector with the same length as input sample <code>x</code>. <strong>Note</strong> that for output to be a true density plot, sum of <code>weights</code> should be 1.</p>
 <p>To illustrate its effect, lets construct a sequence of <code>weights</code> each of which makes one observation having 10 times more weight than any other (that contribute equally). Order of those observations we will choose so that they progress from the smallest to the biggest.</p>
 <pre class="r"><code>weights_list &lt;- lapply(order(mtcars$mpg), function(i) {
   res &lt;- c(rep(1, times = i-1), 10, rep(1, times = length(mtcars$mpg)-i))
@@ -131,7 +131,7 @@ density_anim(weights = weights_list)</code></pre>
 </div>
 <div id="output-value-parameters" class="section level1">
 <h1>Output value parameters</h1>
-<p>Arguments that define structure of output are: <code>n</code>, <code>from</code>, <code>to</code>, and <code>cut</code>. There are also <code>give.Rkern</code> (can be used to return computed “canonical bandwidth”) and <code>na.rm</code> (whether to remove <code>NA</code> values from input), which are not of particular interest here.</p>
+<p>Arguments that define structure of output are: <code>n</code>, <code>from</code>, <code>to</code>, and <code>cut</code>. There are also <code>give.Rkern</code> (can be used to return computed “canonical bandwidth”) and <code>na.rm</code> (whether to remove <code>NA</code> values from input), which are not particularly useful in showing the nature of <code>density()</code> output.</p>
 <div id="number-of-points-n" class="section level2">
 <h2>Number of points <code>n</code></h2>
 <p><code>n</code> is responsible for number of returned x-y points. They are equally spaced on the specified range (see next sections). Default value is 512 (taken as a power of two for performance reasons of <a href="https://rdrr.io/r/stats/fft.html">fft()</a>), but to illustrate its effect on output lets use sequence from 2 to 50.</p>
@@ -146,7 +146,7 @@ density_anim(weights = weights_list)</code></pre>
 
 density_anim(from = round(from_vec, digits = 1))</code></pre>
 <p><img src="/post/2019-08-08-arguments-of-stats-density_files/figure-html/arg_from-1.gif" /><!-- --></p>
-<p>Note that when <code>from</code> is equal to the smallest value of input numeric vector, it is still greater than default left edge of density curve. For explanation of this “extending property” of default curve, see section about <code>cut</code>.</p>
+<p>Note that when <code>from</code> is equal to the smallest value of input numeric vector, it is still greater than left edge of default density curve. For explanation of this “extending property” of default curve, see section about <code>cut</code>.</p>
 </div>
 <div id="right-edge-to" class="section level2">
 <h2>Right edge <code>to</code></h2>
@@ -162,11 +162,11 @@ density_anim(to = round(to_vec, digits = 1))</code></pre>
 <p>By default, sequence of <code>n</code> x-y points is computed as follows:</p>
 <ul>
 <li>Equally spaced grid of <code>n</code> “x” points is computed between <code>from</code> and <code>to</code> which by default are computed as being “<code>cut*bw</code> outside of <code>range(x)</code>”. In other words, default range is extended to left and right of <code>range(x)</code> by the amount of “canonical bandwidth” (computed by <code>bw</code> algorithm) multiplied by argument <code>cut</code> (default being 3).</li>
-<li>“Y” points are taken from “true” curve of kernel density estimate.</li>
+<li>“Y” points are taken from “true curve” of kernel density estimate.</li>
 </ul>
 <pre class="r"><code>density_anim(cut = seq(3, 0, by = -0.2))</code></pre>
 <p><img src="/post/2019-08-08-arguments-of-stats-density_files/figure-html/arg_cut-1.gif" /><!-- --></p>
-<p>When <code>cut</code> changes from 3 to 0, range of computed points shrinks from default one to range of input numeric vector. The fact that by default <code>density()</code> computes set of points outside of original range I call its “extending property”. <strong>Note</strong> that <code>cut</code> can also be negative, which means reduced input range.</p>
+<p>When <code>cut</code> changes from 3 to 0, range of computed points shrinks from default one to range of input numeric vector. Default call to <code>density()</code> computes set of points outside of original range. I call this behavior an “extending property” of <code>density()</code>. <strong>Note</strong> that <code>cut</code> can also be negative, which means reduced input range.</p>
 <p>So by default, <code>density()</code> extends range of input vector. The problem is that it can contradict natural constraints on input. For example, what if you want to estimate density for probability distribution of <em>value that can only be positive</em>? Dealing with boundary values during kernel density estimation is an important topic and it is called a boundary correction problem. One of possible solutions is to use <a href="https://echasnovski.github.io/pdqr/reference/form_resupport.html">form_resupport()</a> function from ‘pdqr’ package.</p>
 </div>
 </div>

@@ -23,17 +23,17 @@ options(tibble.print_min = 5, tibble.print_max = 16)
 
 # Prologue
 
-One of the "go to" functions for [kernel density estimation](https://en.wikipedia.org/wiki/Kernel_density_estimation) is [density()](https://rdrr.io/r/stats/density.html) from base R package 'stats'. Given numeric sample, it returns a set of x-y pairs on estimated density curve. It is also a main "workhorse" for estimating continuous distributions in my ['pdqr'](https://echasnovski.github.io/pdqr) package.
+In R, one of the "go to" functions for [kernel density estimation](https://en.wikipedia.org/wiki/Kernel_density_estimation) is [density()](https://rdrr.io/r/stats/density.html) from base R package 'stats'. Given numeric sample, it returns a set of x-y pairs on estimated density curve. It is also a main "workhorse" for estimating continuous distributions in my ['pdqr'](https://echasnovski.github.io/pdqr) package.
 
 However, output of `density()` highly depends on values of its arguments. Some of them define kernel density estimation algorithm, and the others are responsible for different properties of output set of x-y pairs.
 
-So in this post I illustrate with animations how changing arguments of `density()` changes the output.
+In this post I illustrate with animations how changing arguments of `density()` changes the output.
 
 # Overview
 
 The illustration workflow will be as follows:
 
-- For a certain `density()` argument create a set of its values that will help illustrating how it affects the output.
+- For a certain `density()` argument create a set of its values that will help to illustrate how it affects the output.
 - For every value `a` of argument `x` compute `density(mtcars$mpg, x = a)` (all other arguments having default values). This results into a set of "density curves": piecewise-linear curves drawn through x-y points.
 - Animate evolution of density curves as argument value changes from first to last.
 
@@ -69,7 +69,7 @@ density_anim <- function(..., duration = 10) {
     arg <- arg_name
     states <- vals
   }
-    # Converting to factor to preserve order of argument values in animation
+    # Convert to factor to preserve order of argument values in animation
   states <- factor(states, levels = unique(states))
   
   anim <- tibble(!!sym(arg) := states) %>% 
@@ -84,7 +84,7 @@ density_anim <- function(..., duration = 10) {
         mapping = aes(x, y), inherit.aes = FALSE,
         color = "grey80", size = 1.2
       ) +
-      # Curves for different argument values
+      # Main curves for different argument values
       geom_line(size = 1.5) +
       transition_states(!!sym(arg)) +
       ggtitle(
@@ -104,7 +104,7 @@ Arguments that define kernel density estimation procedure are: `bw`, `adjust`, `
 
 ## Bandwidth `bw`
 
-Argument `bw` is responsible for computing [bandwith](https://en.wikipedia.org/wiki/Kernel_density_estimation#Bandwidth_selection) of kernel density estimation: one of the main parameters that greatly affect the output. It can be specified as either algorithm of computation or directly as number. Because actual bandwidth is computed as `adjust*bw` (`adjust` is another `density()` argument, which is explored in the next section), here we will see how different algorithms compute bandwidths, and the effect of changing bandwidth numeric value will be shown in section about `adjust`.
+Argument `bw` is responsible for computing [bandwith](https://en.wikipedia.org/wiki/Kernel_density_estimation#Bandwidth_selection) of kernel density estimation: one of the main parameters that greatly affect the output. It can be specified as either algorithm of computation or directly as number. Because actual bandwidth is computed as `adjust*bw` (`adjust` is another `density()` argument, which is explored in the next section), here we will see how different algorithms compute bandwidths, and the effect of changing numeric value of bandwidth will be shown in section about `adjust`.
 
 There are 5 available algorithms: "nrd0", "nrd", "ucv", "bcv", "SJ". Here is an animation of their effect:
 
@@ -140,7 +140,7 @@ Choice of kernel function also considerably affects the output shape of density 
 
 ## Observation importance `weights`
 
-Argument `weights` should be used if some observations are considered to be "more important" and should be used more as a reference than the other ones. It should be a numeric vector with the same length as input sample `x`. **Note** that for output to be a true density plot, sum of `weights` should be 1.
+Argument `weights` should be used if some observations are considered to be "more important" and are "more reference" than the other ones. It should be a numeric vector with the same length as input sample `x`. **Note** that for output to be a true density plot, sum of `weights` should be 1.
 
 To illustrate its effect, lets construct a sequence of `weights` each of which makes one observation having 10 times more weight than any other (that contribute equally). Order of those observations we will choose so that they progress from the smallest to the biggest.
 
@@ -158,7 +158,7 @@ As expected from `weights_list` construction, one can see a "spike" that "travel
 
 # Output value parameters
 
-Arguments that define structure of output are: `n`, `from`, `to`, and `cut`. There are also `give.Rkern` (can be used to return computed "canonical bandwidth") and `na.rm` (whether to remove `NA` values from input), which are not of particular interest here.
+Arguments that define structure of output are: `n`, `from`, `to`, and `cut`. There are also `give.Rkern` (can be used to return computed "canonical bandwidth") and `na.rm` (whether to remove `NA` values from input), which are not particularly useful in showing the nature of `density()` output.
 
 ## Number of points `n`
 
@@ -180,7 +180,7 @@ from_vec <- seq(from = min(mtcars$mpg), to = max(mtcars$mpg), length.out = 20)
 density_anim(from = round(from_vec, digits = 1))
 ```
 
-Note that when `from` is equal to the smallest value of input numeric vector, it is still greater than default left edge of density curve. For explanation of this "extending property" of default curve, see section about `cut`.
+Note that when `from` is equal to the smallest value of input numeric vector, it is still greater than left edge of default density curve. For explanation of this "extending property" of default curve, see section about `cut`.
 
 ## Right edge `to`
 
@@ -199,13 +199,13 @@ Note again, that value of `to` equal to maximum of input numeric vector is not e
 By default, sequence of `n` x-y points is computed as follows:
 
 - Equally spaced grid of `n` "x" points is computed between `from` and `to` which by default are computed as being "`cut*bw` outside of `range(x)`". In other words, default range is extended to left and right of `range(x)` by the amount of "canonical bandwidth" (computed by `bw` algorithm) multiplied by argument `cut` (default being 3).
-- "Y" points are taken from "true" curve of kernel density estimate.
+- "Y" points are taken from "true curve" of kernel density estimate.
 
 ```{r arg_cut, cache = TRUE, dependson = "init"}
 density_anim(cut = seq(3, 0, by = -0.2))
 ```
 
-When `cut` changes from 3 to 0, range of computed points shrinks from default one to range of input numeric vector. The fact that by default `density()` computes set of points outside of original range I call its "extending property". **Note** that `cut` can also be negative, which means reduced input range.
+When `cut` changes from 3 to 0, range of computed points shrinks from default one to range of input numeric vector. Default call to `density()` computes set of points outside of original range. I call this behavior an "extending property" of `density()`. **Note** that `cut` can also be negative, which means reduced input range.
 
 So by default, `density()` extends range of input vector. The problem is that it can contradict natural constraints on input. For example, what if you want to estimate density for probability distribution of *value that can only be positive*? Dealing with boundary values during kernel density estimation is an important topic and it is called a boundary correction problem. One of possible solutions is to use [form_resupport()](https://echasnovski.github.io/pdqr/reference/form_resupport.html) function from 'pdqr' package.
 
