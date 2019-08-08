@@ -25,33 +25,169 @@ In this post we will see main approaches of computing statistical distance with 
 
 ```{r init}
 library(pdqr)
-```
 
-# Overview
+d_norm <- as_d(dnorm)
+d_unif <- as_d(dunif)
+```
 
 # Probability based distance
 
+One main group of methods is based on notion of probability. They are primarily used to answer binary question "Are two distributions close to each other?". One important consequence here is that output is bounded to [0; 1] segment. Package 'pdqr' provides three probability based methods.
+
 ## Kolmogorov-Smirnov
+
+Kolmogorov-Smirnov distance is a default choice of `summ_distance()` function, specified with `method = "KS"`. It is inspired by the [Kolmogorov-Smirnov](https://en.wikipedia.org/wiki/Kolmogorov%E2%80%93Smirnov_test) test: output is a supremum of absolute difference between p-functions corresponding to f and g (`|F - G|`):
+
+```{r method-KS-1}
+summ_distance(d_norm, d_unif, method = "KS")
+```
+
+Using "supremum" instead of "maximum" is crucial here, because there can be no "x" point at which actual distance is achieved. This may occur when one of distributions is continuous and the other is discrete:
+
+```{r method-KS-2}
+d_one <- new_d(1, type = "discrete")
+
+# Distance is 1, but there is no point at which |F - G| is equal to 1: when
+# `x = 1`, both p-functions return 1 and |F - G| is equal to zero.
+summ_distance(d_unif, d_one, method = "KS")
+abs(as_p(d_unif)(1) - as_p(d_one)(1))
+
+plot(
+  as_p(d_unif),
+  main = 'Illustration of "supremum" quality of method "KS"',
+  sub = "Both p-functions equal to 1 when `x = 1`, so difference is zero"
+)
+lines(as_p(d_one), col = "blue")
+```
 
 ## Total variation
 
+[Total variation distance](https://en.wikipedia.org/wiki/Total_variation_distance_of_probability_measures) computes a biggest absolute difference of probabilities for any subset of real line. In other words, it is "the largest possible difference between the probabilities that the two probability distributions can assign to the same event". It always returns a number not less than Kolmogorov-Smirnov distance (because in K-S method supremum is searched only on semi-infinite intervals, which is a subset of all subsets of real line). Total variation distance is implemented as `method = "totvar"` in `summ_distance()`:
+
+```{r method-totvar-1}
+summ_distance(d_norm, d_unif, method = "totvar")
+```
+
+**Note** that if two distributions have different types, output is always 1. This is because a set of all possible "x" values of discrete distribution from input pair always gives distance 1. Its total probability is 1 under discrete distribution and 0 under continuous one (as this is a discrete set of points):
+
+```{r method-totvar-2}
+summ_distance(d_unif, d_one, method = "totvar")
+summ_distance(d_norm, d_one, method = "totvar")
+```
+
 ## Method "compare"
+
+This method of `summ_distance()` is a consequence of my study of distribution comparisons. I didn't find any name for this distance, so please contact me if this description sounds familiar.
+
+Method "compare" for input `f` and `g` works in the following way:
+
+- Compute maximum `m` of two numbers: `P(F > G) + 0.5*P(F = G)` and `P(F < G) + 0.5*P(F = G)`. Here `F` and `G` represent input distributions. `P(F > G)` means the probability that a one random sample from distribution `F` is bigger than one random sample from `G`; `P(F < G)` - that inverse is true; `P(F = G)` - that sample numbers are equal (can be non-zero only if both distributions are discrete). Probability values, which maximum is computed, represent probabilities that `F` is situated to the right and left of `G` respectively. The exact form is taken from the definition of [ROC AUC](https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve) computed with method "expected", which takes into account possible discrete nature of distributions (see also [summ_rocauc()](https://echasnovski.github.io/pdqr/reference/summ_roc.html) from 'pdqr' package).
+- Output distance is `2*m - 1`. As `m` is bounded by 0.5 and 1 from below and above, this step normalizes value `m` to be inside [0; 1] segment.
+
+```{r method-compare-1}
+summ_distance(d_norm, d_unif, method = "compare")
+```
+
+One important advantage of this method is that it works perfectly with mixed types of distributions (when one is discrete and the other is continuous). However, a noticeable drawback here is that **this distance can be zero for different distributions** (having `d(x, y) = 0` doesn't mean that `x = y`). This should be perceived as those distributions are "equivalent" under this distance:
+
+```{r method-compare-2}
+d_triang <- new_d(data.frame(x = c(0, 0.5, 1), y = c(0, 2, 0)), "continuous")
+
+# Output is 0, although `d_triang` and `d_unif` represent different
+# distributions
+summ_distance(d_triang, d_unif, method = "compare")
+```
 
 # Metric based distance
 
+Other important group of methods are "metric based", meaning that output is based on notion of basic one-dimensional distance of "x" values. These methods are good for answering question "How far are two distributions from one another?". Outputs of these methods are not bounded from above (can be as big as they can).
+
 ## Wasserstein
+
+[Wasserstein distance](https://en.wikipedia.org/wiki/Wasserstein_metric) is also called an [earth mover distance](https://en.wikipedia.org/wiki/Earth_mover%27s_distance) for probability distributions. In fact, this is a family of methods parametrized by one parameter `p`. `summ_distance()` implements only case of `p = 1`, also called 1-Wasserstein distance, with method "wass".
+
+Intuition behind this distance is that it is "average path density point should go while transforming from one into another" (like moving two "piles of dirt", being densities, one into another).
+
+```{r method-wass-1}
+# Output should be intuitively perceived as "average distance" between density
+# curves
+summ_distance(d_norm, d_unif, method = "wass")
+
+# This is also a helpful demonstration of Wasserstein distance. If we move
+# distance to left or right by the amount of A, Wasserstein distance will be A.
+summ_distance(d_norm, d_norm + 13, method = "wass")
+summ_distance(d_unif, d_unif - 0.7, method = "wass")
+```
+
+Also an interesting description of 1-Wasserstein distance is that it is an expected value of the following statistic:
+
+- Generate `X` values from two distributions and sort them separately.
+- Statistic is mean distance between corresponding sorted points.
+
+```{r method-wass-2}
+set.seed(101)
+smpl_norm <- as_r(d_norm)(10000)
+smpl_unif <- as_r(d_unif)(10000)
+
+# This is close to`summ_distance(d_norm, d_unif, method = "wass")`
+mean(abs(sort(smpl_norm) - sort(smpl_unif)))
+```
 
 ## Cramer
 
+Cramer distance is an integral of `(F - G)^2` over the whole real line. Intuitively, it somewhat relates to Wasserstein distance as variance is relates to first central absolute moment:
+
+```{r method-cramer}
+summ_distance(d_norm, d_unif, method = "cramer")
+```
+
 ## Method "align"
+
+Method "align" of `summ_distance()` is also the result of my research. If this description sounds familiar, please contact me.
+
+Output of this method an absolute value of shift `d` (possibly negative), such that both `P(f+d >= g) >= 0.5` and `P(f+d <= g) >= 0.5` as close as reasonably possible. In other words, it searches `d` so that `f + d` (shifted distribution of `f` by amount of number `d`) and `g` are aligned.
+
+```{r method-align}
+(align_dist <- summ_distance(d_norm, d_unif, method = "align"))
+
+# Distributions are "aligned"
+summ_prob_true(d_norm + align_dist >= d_unif)
+summ_prob_true(d_norm + align_dist <= d_unif)
+```
 
 # Entropy based distance
 
+The third and final group of methods are based on notion of [entropy](https://en.wikipedia.org/wiki/Entropy_(information_theory)) and [differential entropy](https://en.wikipedia.org/wiki/Entropy_(information_theory)#Differential_entropy).
+
+## Kullback-Leibler divergence
+
+[Kullback-Leibler divergence](https://en.wikipedia.org/wiki/Kullback%E2%80%93Leibler_divergence) is a popular (for certain tasks) method of comparing distributions. Its main drawback is that it is poorly suited for general usage. Two input distributions should have the same type and preferably be defined on the same support interval. KL divergence is also not symmetric: `KL(f, g)` is not necessarily equal to `KL(g, f)`.
+
+Other name for KL divergence is "relative entropy", so this distance can be computed with [summ_entropy2()](https://echasnovski.github.io/pdqr/reference/summ_entropy.html) function and method "relative":
+
+```{r kl-divergence}
+# KL divergence is best suited for distributions with the same support.
+d_beta_1 <- as_d(dbeta, support = c(0, 1), shape1 = 1, shape2 = 3)
+d_beta_2 <- as_d(dbeta, support = c(0, 1), shape1 = 2, shape2 = 6)
+
+summ_entropy2(d_beta_1, d_beta_2, method = "relative")
+
+# KL divergence is not symmetric
+summ_entropy2(d_beta_1, d_beta_2, method = "relative")
+```
+
 ## Method "entropy"
 
-## summ_entropy()
+Method "entropy" in `summ_distance()` is a symmetric version of Kullback-Leibler divergence. Output is `KL(f, g)  + KL(g, f)`:
+
+```{r method-entropy}
+summ_distance(d_beta_1, d_beta_2, method = "entropy")
+```
 
 # Epilogue
+
+- Distance between objects is an important topic in practical studies. One of the most important type of object to study for statistical inference are probability distributions.
+- Distance between probability distributions can be computed in many different ways. Package 'pdqr' provides functions `summ_distance()` and `summ_entropy()`, with which distance value can be computed with one line.
 
 `r blogdown::shortcode("spoiler_details", summary = '\"sessionInfo()\"')`
 
