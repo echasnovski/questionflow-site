@@ -1,0 +1,123 @@
+---
+title: Local randomness in R
+author: Evgeni Chasnovski
+date: '2019-08-13'
+publishDate: '2019-08-13'
+slug: local-randomness-in-r
+categories: []
+tags:
+  - rstats
+description: 'One approach of using random number generation inside a function without affecting outer state of random generator.'
+---
+
+
+
+<div id="prologue" class="section level1">
+<h1>Prologue</h1>
+<p>Let’s say we have a deterministic (non-random) problem for which one of the solutions involves randomness. One very common example of such problem is a function minimization on certain interval: it can be solved non-randomly (like in most methods of <a href="https://rdrr.io/r/stats/optim.html">optim()</a>), or randomly (the simplest approach being to generate random set of points on interval and to choose the one with the lowest function value).</p>
+<p>What is a “clean” way of writing a function to solve the problem? The issue with direct usage of randomness inside a function is that it affects the state of outer random number generation:</p>
+<pre class="r"><code># Demo problem solving function
+minimize_f &lt;- function(f, from = 0, to = 1, n = 1e3) {
+  points &lt;- runif(n, min = from, max = to)
+  
+  invisible(min(f(points)))
+}
+
+# Reference random number output
+set.seed(101)
+runif(1)
+## [1] 0.3721984
+
+# Test random number output is different from reference one. But we want it to
+# be the same.
+set.seed(101)
+minimize_f(sin)
+runif(1)
+## [1] 0.1016229</code></pre>
+<p>So how can we get “more clean” implementation which does not affect outer state? This short post is inspired by the following sources: <a href="https://stackoverflow.com/questions/23090958/isolate-randomness-of-a-local-environment-from-the-global-r-process">this StackOverflow question</a> by Yihui Xie and <a href="http://www.cookbook-r.com/Numbers/Saving_the_state_of_the_random_number_generator/">this cookbook advice</a>.</p>
+</div>
+<div id="local-randomness" class="section level1">
+<h1>Local randomness</h1>
+<p>The state of random number generation is stored in <a href="https://rdrr.io/r/base/Random.html">.Random.seed</a> variable, which is “an integer vector” and it “can be saved and restored, but should not be altered by the user”. This gives us a very big hint about how to implement “local randomness”: capture state at the start of the function, make necessary computations, and restore state at the end. Bad news is, this also means that we enter here the dark realm of variables and their environments.</p>
+<p><strong>How to “save state”?</strong> In help page there is a note: “The object <code>.Random.seed</code> is only looked for in the user’s workspace”. Here “user’s workspace” seems to mean global environment, which should be addressed with variable <code>.GlobalEnv</code>. So, to “save state” we need to get a value of <code>.Random.seed</code> variable inside global environment. This is a job for <a href="https://rdrr.io/r/base/exists.html">get0()</a>:</p>
+<pre class="r"><code>get_rand_state &lt;- function() {
+  # Using `get0()` here to have `NULL` output in case object doesn&#39;t exist.
+  # Also using `inherits = FALSE` to get value exactly from global environment
+  # and not from one of its parent.
+  get0(&quot;.Random.seed&quot;, envir = .GlobalEnv, inherits = FALSE)
+}</code></pre>
+<p><strong>How to “restore state”?</strong> We need to assign certain value (of previously saved state) to a <code>.Random.seed</code> variable in global environment. This is a job for <a href="https://rdrr.io/r/base/assign.html">assign()</a>:</p>
+<pre class="r"><code>set_rand_state &lt;- function(state) {
+  # Assigning `NULL` state might lead to unwanted consequences
+  if (!is.null(state)) {
+    assign(&quot;.Random.seed&quot;, state, envir = .GlobalEnv, inherits = FALSE)
+  }
+}</code></pre>
+<p><strong>How to make “local randomness”?</strong> We can now save and restore random state. The final peace of a puzzle is to make restoration at the end of computations inside a function. This is a job for <a href="https://rdrr.io/r/base/on.exit.html">on.exit()</a>: call for <code>set_rand_state()</code> should be wrapped in <code>on.exit()</code> to perform restoration exactly at the moment when function ends all operations it is supposed to do.</p>
+<p><strong>Notes</strong> about positioning of calls inside a function:</p>
+<ul>
+<li>Call to <code>get_rand_state()</code> should be done right at the beginning of a function body to capture the state just before the function was called.</li>
+<li>Simply positioning call to <code>set_rand_state()</code> inside function body right before returning result might be not enough, because previous lines of code can terminate earlier (for example, with error). Function <code>on.exit()</code> guarantees execution of expression.</li>
+</ul>
+<p>Giving all that, the “clean” way of implementing “local randomness” is the following:</p>
+<pre class="r"><code>my_f &lt;- function() {
+  old_state &lt;- get_rand_state()
+  on.exit(set_rand_state(old_state))
+  
+  # The rest of the code
+}</code></pre>
+<p>Let’s check this solution on practice:</p>
+<pre class="r"><code>minimize_f_clean &lt;- function(f, from = 0, to = 1, n = 1e3) {
+  old_state &lt;- get_rand_state()
+  on.exit(set_rand_state(old_state))
+  
+  points &lt;- runif(n, min = from, max = to)
+  
+  invisible(min(f(points)))
+}
+
+# Reference random number output (repeated for reading convenience)
+set.seed(101)
+runif(1)
+## [1] 0.3721984
+
+# Output of `runif(1)` is the same as reference one, which was the goal
+set.seed(101)
+minimize_f_clean(sin)
+runif(1)
+## [1] 0.3721984</code></pre>
+</div>
+<div id="epilogue" class="section level1">
+<h1>Epilogue</h1>
+<ul>
+<li>Creating a function with “local randomness” although requires some dark R magic (with <code>get0()</code>, <code>assign()</code>, and <code>on.exit()</code> usage), is pretty straightforward.</li>
+<li>If you have some non-trivial R problem, there is a good chance that Yihui Xie has already posted a question on StackOverflow about it.</li>
+</ul>
+{{% spoiler_details summary="sessionInfo()" %}}
+<pre class="r"><code>sessionInfo()
+## R version 3.6.1 (2019-07-05)
+## Platform: x86_64-pc-linux-gnu (64-bit)
+## Running under: Ubuntu 18.04.3 LTS
+## 
+## Matrix products: default
+## BLAS:   /usr/lib/x86_64-linux-gnu/openblas/libblas.so.3
+## LAPACK: /usr/lib/x86_64-linux-gnu/libopenblasp-r0.2.20.so
+## 
+## locale:
+##  [1] LC_CTYPE=ru_UA.UTF-8       LC_NUMERIC=C              
+##  [3] LC_TIME=ru_UA.UTF-8        LC_COLLATE=ru_UA.UTF-8    
+##  [5] LC_MONETARY=ru_UA.UTF-8    LC_MESSAGES=ru_UA.UTF-8   
+##  [7] LC_PAPER=ru_UA.UTF-8       LC_NAME=C                 
+##  [9] LC_ADDRESS=C               LC_TELEPHONE=C            
+## [11] LC_MEASUREMENT=ru_UA.UTF-8 LC_IDENTIFICATION=C       
+## 
+## attached base packages:
+## [1] stats     graphics  grDevices utils     datasets  methods   base     
+## 
+## loaded via a namespace (and not attached):
+##  [1] compiler_3.6.1  magrittr_1.5    bookdown_0.11   tools_3.6.1    
+##  [5] htmltools_0.3.6 yaml_2.2.0      Rcpp_1.0.1      stringi_1.4.3  
+##  [9] rmarkdown_1.13  blogdown_0.12   knitr_1.23      stringr_1.4.0  
+## [13] digest_0.6.19   xfun_0.7        evaluate_0.14</code></pre>
+{{% /spoiler_details %}}
+</div>

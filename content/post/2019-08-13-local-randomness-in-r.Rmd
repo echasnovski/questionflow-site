@@ -1,0 +1,126 @@
+---
+title: Local randomness in R
+author: Evgeni Chasnovski
+date: '2019-08-13'
+publishDate: '2019-08-13'
+slug: local-randomness-in-r
+categories: []
+tags:
+  - rstats
+description: 'One approach of using random number generation inside a function without affecting outer state of random generator.'
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  collapse = TRUE,
+  fig.width = 9, fig.height = 5.5
+)
+options(tibble.print_min = 5, tibble.print_max = 16)
+```
+
+# Prologue
+
+Let's say we have a deterministic (non-random) problem for which one of the solutions involves randomness. One very common example of such problem is a function minimization on certain interval: it can be solved non-randomly (like in most methods of [optim()](https://rdrr.io/r/stats/optim.html)), or randomly (the simplest approach being to generate random set of points on interval and to choose the one with the lowest function value).
+
+What is a "clean" way of writing a function to solve the problem? The issue with direct usage of randomness inside a function is that it affects the state of outer random number generation:
+
+```{r motivation}
+# Demo problem solving function
+minimize_f <- function(f, from = 0, to = 1, n = 1e3) {
+  points <- runif(n, min = from, max = to)
+  
+  invisible(min(f(points)))
+}
+
+# Reference random number output
+set.seed(101)
+runif(1)
+
+# Test random number output is different from reference one. But we want it to
+# be the same.
+set.seed(101)
+minimize_f(sin)
+runif(1)
+```
+
+So how can we get "more clean" implementation which does not affect outer state? This short post is inspired by the following sources: [this StackOverflow question](https://stackoverflow.com/questions/23090958/isolate-randomness-of-a-local-environment-from-the-global-r-process) by Yihui Xie and [this cookbook advice](http://www.cookbook-r.com/Numbers/Saving_the_state_of_the_random_number_generator/).
+
+# Local randomness
+
+The state of random number generation is stored in [.Random.seed](https://rdrr.io/r/base/Random.html) variable, which is "an integer vector" and it "can be saved and restored, but should not be altered by the user". This gives us a very big hint about how to implement "local randomness": capture state at the start of the function, make necessary computations, and restore state at the end. Bad news is, this also means that we enter here the dark realm of variables and their environments.
+
+**How to "save state"?** In help page there is a note: "The object `.Random.seed` is only looked for in the user's workspace". Here "user's workspace" seems to mean global environment, which should be addressed with variable `.GlobalEnv`. So, to "save state" we need to get a value of `.Random.seed` variable inside global environment. This is a job for [get0()](https://rdrr.io/r/base/exists.html):
+
+```{r get_rand_state}
+get_rand_state <- function() {
+  # Using `get0()` here to have `NULL` output in case object doesn't exist.
+  # Also using `inherits = FALSE` to get value exactly from global environment
+  # and not from one of its parent.
+  get0(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+}
+```
+
+**How to "restore state"?** We need to assign certain value (of previously saved state) to a `.Random.seed` variable in global environment. This is a job for [assign()](https://rdrr.io/r/base/assign.html):
+
+```{r set_rand_state}
+set_rand_state <- function(state) {
+  # Assigning `NULL` state might lead to unwanted consequences
+  if (!is.null(state)) {
+    assign(".Random.seed", state, envir = .GlobalEnv, inherits = FALSE)
+  }
+}
+```
+
+**How to make "local randomness"?** We can now save and restore random state. The final peace of a puzzle is to make restoration at the end of computations inside a function. This is a job for [on.exit()](https://rdrr.io/r/base/on.exit.html): call for `set_rand_state()` should be wrapped in `on.exit()` to perform restoration exactly at the moment when function ends all operations it is supposed to do.
+
+**Notes** about positioning of calls inside a function:
+
+- Call to `get_rand_state()` should be done right at the beginning of a function body to capture the state just before the function was called.
+- Simply positioning call to `set_rand_state()` inside function body right before returning result might be not enough, because previous lines of code can terminate earlier (for example, with error). Function `on.exit()` guarantees execution of expression.
+
+Giving all that, the "clean" way of implementing "local randomness" is the following:
+
+```{r clean-example}
+my_f <- function() {
+  old_state <- get_rand_state()
+  on.exit(set_rand_state(old_state))
+  
+  # The rest of the code
+}
+```
+
+Let's check this solution on practice:
+
+```{r working-motivation}
+minimize_f_clean <- function(f, from = 0, to = 1, n = 1e3) {
+  old_state <- get_rand_state()
+  on.exit(set_rand_state(old_state))
+  
+  points <- runif(n, min = from, max = to)
+  
+  invisible(min(f(points)))
+}
+
+# Reference random number output (repeated for reading convenience)
+set.seed(101)
+runif(1)
+
+# Output of `runif(1)` is the same as reference one, which was the goal
+set.seed(101)
+minimize_f_clean(sin)
+runif(1)
+```
+
+# Epilogue
+
+- Creating a function with "local randomness" although requires some dark R magic (with `get0()`, `assign()`, and `on.exit()` usage), is pretty straightforward.
+- If you have some non-trivial R problem, there is a good chance that Yihui Xie has already posted a question on StackOverflow about it.
+
+`r blogdown::shortcode("spoiler_details", summary = '\"sessionInfo()\"')`
+
+```{r sessionInfo, eval = TRUE}
+sessionInfo()
+```
+
+`r blogdown::shortcode("/spoiler_details")`
