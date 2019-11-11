@@ -1,0 +1,207 @@
+---
+title: Statistical uncertainty with R and pdqr
+author: Evgeni Chasnovski
+date: '2019-11-11'
+slug: statistical-uncertainty-with-r-and-pdqr
+categories: []
+tags:
+  - rstats
+  - pdqr
+description: "CRAN has accepted my 'pdqr' package. Here are important examples of how it can be used to describe and evaluate statistical uncertainty."
+---
+
+
+
+<div id="prologue" class="section level1">
+<h1>Prologue</h1>
+<p>I am glad to announce that my latest, long written R package <a href="https://echasnovski.github.io/pdqr/">‘pdqr’</a> is <a href="https://CRAN.R-project.org/package=pdqr">accepted to CRAN</a>. It provides tools for creating, transforming and summarizing custom random variables with distribution functions (as base R ‘p*()’, ‘d*()’, ‘q*()’, and ‘r*()’ functions). You can read a brief overview in <a href="http://www.questionflow.org/2019/08/01/announcing-pdqr/#package-overview">one of my previous posts</a>.</p>
+<p>We will need the following setup:</p>
+<pre class="r"><code>library(pdqr)
+library(magrittr)
+
+# For the sake of reproducibility
+set.seed(20191111)</code></pre>
+</div>
+<div id="statistical-uncertainty" class="section level1">
+<h1>Statistical uncertainty</h1>
+<div id="general-description" class="section level2">
+<h2>General description</h2>
+<p>Statistical estimation usually has the following setup. There is a sample (<em>observed, usually randomly chosen, set</em> of values of measurable quantities) from some general population (<em>whole set</em> of values of the same measurable quantities). <em>We need to make conclusions about the general population based on a sample</em>. This is done by computing summary values (called <strong>statistics</strong>) of a sample, and making reasonable assumptions (with process usually called <strong>inference</strong>) about how these values are close to values that <em>potentially can be computed based on whole general population</em>. Thus, summary value based on a sample (<strong>sample statistic</strong>) is an <em>estimation</em> of potential summary value based on a general population (true value).</p>
+<p>How can we make inference about quality of this estimation? This question itself describes <strong>statistical uncertainty</strong> and can be unfolded into a deep philosophical question about probability, nature, and life in general. Basically, the answer depends on assumptions about the relation between sample, general population, and statistic.</p>
+<p>For me, the most beautiful inferential approach is <strong><a href="https://en.wikipedia.org/wiki/Bootstrapping_(statistics)">bootstrap</a></strong>. It has the following key assumption: <em>process of producing samples from general population can be simulated by doing random sampling with replacement from present sample</em>. In other words, we agree (and practice often agrees with us) that random sampling with replacement from current sample (sometimes called <em>bootstrap sampling</em>) has a “close enough” behavior to the “true nature” of how initial sample was created. Numerical estimation of “how close” is also an interesting problem, but it is a more complicated topic.</p>
+</div>
+<div id="computation-with-pdqr" class="section level2">
+<h2>Computation with pdqr</h2>
+<p>Natural way of computing bootstrap quantities is straightforward: produce <span class="math inline">\(B\)</span> random bootstrap samples, for each one compute value of statistic under question, and summarize <em>sample of statistic values</em> with numerical quantity (usually with some center and spread values).</p>
+<p>There are many ways of performing bootstrap in R, like <a href="https://rdrr.io/cran/boot/man/boot.html">boot::boot()</a>, <a href="https://tidymodels.github.io/rsample/reference/bootstraps.html">rsample::bootstraps()</a>, and others. In turn, ‘pdqr’ offers its own way of describing and doing bootstrap inference for one-dimensional numeric sample(s):</p>
+<ul>
+<li><strong>Create</strong> a random variable (in the form of pdqr-function with <code>new_*()</code> family) based on initial sample. This random variable already describes a general population with “bootstrap assumption”: it will produce values based on initial sample. <a href="https://echasnovski.github.io/pdqr/reference/meta.html#pdqr-type">Type</a> of this variable determines the type of bootstrap:
+<ul>
+<li>Type <code>&quot;discrete&quot;</code> describes ordinary bootstrap. Only values from initial sample can be produced.</li>
+<li>Type <code>&quot;continuous&quot;</code> describes <a href="https://en.wikipedia.org/wiki/Bootstrapping_(statistics)#Smooth_bootstrap">smooth bootstrap</a>. Initial sample is smoothed by doing kernel density estimation with <a href="https://rdrr.io/r/stats/density.html">density()</a> function and random variable produces values from distribution with that density.</li>
+</ul></li>
+<li><strong>Transform</strong> created random variable into one that produces statistic values obtained with bootstrap. Sometimes this can be done with basic mathematical operations like <code>+</code>, <code>min</code>, etc. But usually this is done with <a href="https://echasnovski.github.io/pdqr/reference/form_estimate.html">form_estimate()</a> function: it creates many (10000 by default) bootstrap samples, for each computes statistic value, and creates its own random variable in the form of pdqr-function (<a href="https://echasnovski.github.io/pdqr/reference/meta.html#pdqr-class">class</a> and type are preserved from supplied random variable, but this can be adjusted). It needs at least three arguments:
+<ul>
+<li><code>f</code>: pdqr-function representing random variable. In described setup it is created as a result of “Create” step.</li>
+<li><code>stat</code>: statistic function that accepts numeric vector of size <code>sample_size</code> and returns single numeric or logical output.</li>
+<li><code>sample_size</code>: Size of a sample that each bootstrap draw should produce. In described setup it <em>should be equal</em> to number of elements in initial sample.</li>
+</ul></li>
+<li><strong>Summarize</strong> distribution of statistic. Usually this is point measure of center or spread, or interval.</li>
+</ul>
+<div id="example-1-single-numerical-estimate" class="section level3">
+<h3>Example 1: single numerical estimate</h3>
+<p>Mean value of ‘mpg’ variable in <code>mtcars</code> dataset is 20.090625. However, having in mind statistical uncertainty, we can ask how precise is this estimation? This can, and should, be reformulated in the following question: <strong>if we repeat sampling sets of 32 cars from general population of all cars, how close their ‘mpg’ sample means will be to each other?</strong> This can be answered by computing bootstrap distribution of sample means (pipe <a href="https://magrittr.tidyverse.org/reference/pipe.html">%&gt;%</a> function from ‘magrittr’ package is used to simplify notation):</p>
+<pre class="r"><code># Using ordinary bootstrap
+d_mpg_dis_mean &lt;- mtcars$mpg %&gt;% 
+  new_d(type = &quot;discrete&quot;) %&gt;% 
+  form_estimate(stat = mean, sample_size = nrow(mtcars))
+
+  # Spread of this bootstrap distribution describes the precision of estimation:
+  # bigger values indicate lower precision
+summ_sd(d_mpg_dis_mean)
+## [1] 1.04067
+
+  # This discrete distribution has the following d-function
+plot(
+  d_mpg_dis_mean,
+  main = &quot;Ordinary bootstrap distribution of &#39;mpg&#39; sample mean&quot;
+)</code></pre>
+<p><img src="/post/2019-11-11-statistical-uncertainty-with-pdqr_files/figure-html/example-1_discrete-1.png" width="864" /></p>
+<p>If modeling assumption about continuous nature of ‘mpg’ variable is reasonable (which it seems so), you can use “smooth bootstrap” by changing type of initial pdqr-function:</p>
+<pre class="r"><code># Using smooth bootstrap with `type = &quot;continuous&quot;`
+d_mpg_con_mean &lt;- mtcars$mpg %&gt;% 
+  new_d(type = &quot;continuous&quot;) %&gt;% 
+  form_estimate(stat = mean, sample_size = nrow(mtcars))
+
+  # Spread is higher in this case because kernel density estimation with
+  # `density()` function extends support during creation of pdqr-function on the
+  # bootstrap step
+summ_sd(d_mpg_con_mean)
+## [1] 1.153957
+
+plot(
+  d_mpg_con_mean,
+  main = &quot;Smooth bootstrap distribution of &#39;mpg&#39; sample mean&quot;
+)</code></pre>
+<p><img src="/post/2019-11-11-statistical-uncertainty-with-pdqr_files/figure-html/example-1_continuous-1.png" width="864" /></p>
+<p>One can also do ordinary bootstrap but represent bootstrap distribution of sample mean with continuous random variable:</p>
+<pre class="r"><code># Using ordinary bootstrap, but treating sample mean as continuous
+d_mpg_con_mean_2 &lt;- mtcars$mpg %&gt;% 
+  new_d(type = &quot;discrete&quot;) %&gt;% 
+  form_estimate(
+    stat = mean, sample_size = nrow(mtcars),
+    # Create continuous pdqr-function from bootstrap sample means
+    args_new = list(type = &quot;continuous&quot;)
+  )
+
+summ_sd(d_mpg_con_mean_2)
+## [1] 1.063524
+
+plot(
+  d_mpg_con_mean_2,
+  main = &quot;Ordinary bootstrap distribution of &#39;mpg&#39; continuous sample mean&quot;
+)</code></pre>
+<p><img src="/post/2019-11-11-statistical-uncertainty-with-pdqr_files/figure-html/example-1_both-1.png" width="864" /></p>
+<p>In this case, sample mean has standard deviation from 1.04067 to 1.1539572 (depends on assumptions about data generating process).</p>
+</div>
+<div id="example-2-single-logical-estimate" class="section level3">
+<h3>Example 2: single logical estimate</h3>
+<p>Share of 4-cylinder cars in <code>mtcars</code> is equal to 0.34375. However, it might happen that we don’t care about actual value, but only if it is bigger 0.3 or not. In present data it is bigger, but how sure we can be about that? In other words: <strong>if we repeat sampling sets of 32 cars from general population of all cars, which part of it will have share of 4-cylinder cars bigger than 0.3?</strong>. Here is the way of computing that with ‘pdqr’:</p>
+<pre class="r"><code># If statistic returns logical value (indicating presence of some feature in
+# sample), output estimate pdqr-function is &quot;boolean&quot;: &quot;discrete&quot; type function
+# with elements being exactly 0 (indicating `FALSE`) and 1 (indicating `TRUE`).
+d_cyl_lgl &lt;- mtcars$cyl %&gt;% 
+  new_d(type = &quot;discrete&quot;) %&gt;% 
+  form_estimate(
+    stat = function(x) {mean(x == 4) &gt; 0.3},
+    sample_size = nrow(mtcars)
+  )
+
+d_cyl_lgl
+## Probability mass function of discrete type
+## Support: [0, 1] (2 elements, probability of 1: 0.7113)
+
+  # To extract certain probability from boolean pdqr-function, use
+  # `summ_prob_*()` functions
+summ_prob_true(d_cyl_lgl)
+## [1] 0.7113
+summ_prob_false(d_cyl_lgl)
+## [1] 0.2887</code></pre>
+<p>In this case, estimated probability that share of 4-cylinder cars in general population is more than 0.3 is 0.7113.</p>
+</div>
+<div id="example-3-comparison-of-estimates" class="section level3">
+<h3>Example 3: comparison of estimates</h3>
+<p>In <code>mtcars</code> there are 19 cars with automatic transmission (‘am’ variable is 0) and 13 with manual (‘am’ variable is 1). We might be concerned with the following question: <strong>are cars with automatic transmission heavier than cars with manual transmission?</strong> This is an example of question where reformulating is very crucial, because it leads to completely different methodologies. Basically, it is all about dealing with statistical uncertainty and how to measure that one numerical set is bigger than the other.</p>
+<p>First, rather verbose, way of expanding this question is this one: <strong>if we randomly choose a car with automatic transmission (uniformly on set of all cars with automatic transmission) and a car with manual (uniformly on set of all cars with manual transmission), what is the probability that weight of the first one is bigger than the second one?</strong>. With ‘pdqr’ this can be computed straightforwardly by comparing two random variables (which is implemented exactly like the question above; read more <a href="https://echasnovski.github.io/pdqr/reference/methods-group-generic.html#ops">here</a>):</p>
+<pre class="r"><code># Seems reasonable to treat weight as continuous random variable. Note that this
+# means use of kernel density estimation, which can lead to random variable that
+# returns negative values. As weight can be only positive, it is a good idea to
+# ensure that. Package &#39;pdqr&#39; has `form_resupport()` function for that.
+d_wt_am0 &lt;- mtcars$wt[mtcars$am == 0] %&gt;%
+  new_d(type = &quot;continuous&quot;) %&gt;% 
+  # Ensure that returned values are only positive
+  form_resupport(c(0, NA))
+d_wt_am1 &lt;- mtcars$wt[mtcars$am == 1] %&gt;%
+  new_d(type = &quot;continuous&quot;) %&gt;% 
+  form_resupport(c(0, NA))
+
+# Comparing two pdqr-functions with `&gt;=` results into boolean pdqr-function
+summ_prob_true(d_wt_am0 &gt;= d_wt_am1)
+## [1] 0.9209063</code></pre>
+<p>So in this case the answer is that probability of “automatic” cars being heavier than “manual” ones is around 0.921.</p>
+<p>Second way of understanding question about comparing is the following: <strong>is average weight of “automatic” cars bigger than of “manual”?</strong>. This type of questions are more widespread in statistical practice. Having to deal with statistical uncertainty, this should be reformulated: <strong>if we repeat sampling (in parallel pairs) sets of 19 “automatic” cars and of 13 “manual” cars, which part of the set pairs will have mean weight of “automatic” cars bigger?</strong> This question implies creating bootstrap distribution of sample means for “automatic” and “manual” cars with the following comparing:</p>
+<pre class="r"><code>d_wt_am0_mean &lt;- d_wt_am0 %&gt;% 
+  form_estimate(stat = mean, sample_size = sum(mtcars$am == 0)) %&gt;% 
+  # Ensure &quot;positiveness&quot; of random variable
+  form_resupport(c(0, NA))
+d_wt_am1_mean &lt;- d_wt_am1 %&gt;% 
+  form_estimate(stat = mean, sample_size = sum(mtcars$am == 1)) %&gt;% 
+  form_resupport(c(0, NA))
+
+# Comparing two random variables representing sample means
+summ_prob_true(d_wt_am0_mean &gt;= d_wt_am1_mean)
+## [1] 1</code></pre>
+<p>So in this case the answer is that probability of “automatic” cars being heavier than “manual” ones is 1.</p>
+<p>Computed results can have decisively different outcomes. If researcher sets a standard 0.95 rule, first variant would imply that conclusion ‘“automatic” cars are heavier than “manual”’ isn’t significant, while the second would imply otherwise.</p>
+</div>
+</div>
+</div>
+<div id="epilogue" class="section level1">
+<h1>Epilogue</h1>
+<ul>
+<li>Basic knowledge about statistical uncertainty is crucial to understand the process of statistical inference.</li>
+<li>One of the most popular methodologies for doing statistical inference is bootstrap. There are at least two kinds of it: ordinary and smooth.</li>
+<li>Package ‘pdqr’ offers extensive functionality for describing and estimating statistical uncertainty. Core functions here are <a href="https://echasnovski.github.io/pdqr/reference/new-pdqr.html"><code>new_*()</code> family</a>, <a href="https://echasnovski.github.io/pdqr/reference/form_estimate.html"><code>form_estimate()</code></a>, and <a href="https://echasnovski.github.io/pdqr/reference/methods-group-generic.html#ops">comparison operators</a>.</li>
+</ul>
+{{% spoiler_details summary="sessionInfo()" %}}
+<pre class="r"><code>sessionInfo()
+## R version 3.6.1 (2019-07-05)
+## Platform: x86_64-pc-linux-gnu (64-bit)
+## Running under: Ubuntu 18.04.3 LTS
+## 
+## Matrix products: default
+## BLAS:   /usr/lib/x86_64-linux-gnu/openblas/libblas.so.3
+## LAPACK: /usr/lib/x86_64-linux-gnu/libopenblasp-r0.2.20.so
+## 
+## locale:
+##  [1] LC_CTYPE=ru_UA.UTF-8       LC_NUMERIC=C              
+##  [3] LC_TIME=ru_UA.UTF-8        LC_COLLATE=ru_UA.UTF-8    
+##  [5] LC_MONETARY=ru_UA.UTF-8    LC_MESSAGES=ru_UA.UTF-8   
+##  [7] LC_PAPER=ru_UA.UTF-8       LC_NAME=C                 
+##  [9] LC_ADDRESS=C               LC_TELEPHONE=C            
+## [11] LC_MEASUREMENT=ru_UA.UTF-8 LC_IDENTIFICATION=C       
+## 
+## attached base packages:
+## [1] stats     graphics  grDevices utils     datasets  methods   base     
+## 
+## other attached packages:
+## [1] magrittr_1.5 pdqr_0.2.0  
+## 
+## loaded via a namespace (and not attached):
+##  [1] Rcpp_1.0.2      bookdown_0.13   crayon_1.3.4    digest_0.6.21  
+##  [5] evaluate_0.14   blogdown_0.15   pillar_1.4.2    rlang_0.4.0    
+##  [9] stringi_1.4.3   rmarkdown_1.15  tools_3.6.1     stringr_1.4.0  
+## [13] xfun_0.9        yaml_2.2.0      compiler_3.6.1  htmltools_0.3.6
+## [17] knitr_1.25</code></pre>
+{{% /spoiler_details %}}
+</div>
