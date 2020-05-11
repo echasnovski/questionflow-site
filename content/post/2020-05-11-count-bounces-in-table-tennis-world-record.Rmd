@@ -1,0 +1,73 @@
+---
+title: Count bounces in table tennis world record
+author: Evgeni Chasnovski
+date: '2020-05-11'
+slug: count-bounces-in-table-tennis-world-record
+categories: []
+tags:
+  - python
+  - curiosity-project
+description: "On May 7th 2020 Daniel Ives set a new world record by continuously bouncing table tennis ball for 5 hours, 21 minutes, and 4 seconds. But how many bounces did he actually make?"
+---
+
+# Prologue
+
+Dan Ives is no stranger to participating in "prolonged" table tennis activities and capturing it on camera. He once [said "table tennis" 100,000 times](https://www.youtube.com/watch?v=6mt4_8Rd5tg), which took him about 15 hours. With his father Peter he also set a [world record for the longest table tennis rally](https://www.youtube.com/watch?v=cfp5SEV3Bns) which lasted for 8 hours, 40 minutes, and 10 seconds (8h40m10s as a shorter description of time period).
+
+On May 7th 2020 Dan made a successful attempt to beat a world record for the [longest duration to control a table tennis ball with a bat](https://www.guinnessworldrecords.com/world-records/table-tennis-bat-and-ball-control-duration?fb_comment_id=784092958310554_1433556316697545). He surpassed current record duration of 5h2m37s by 18 minutes and 27 seconds for a total of 5h21m4s. He also live streamed the event on his ["TableTennisDaily" YouTube channel](https://www.youtube.com/channel/UC_368FANcHhkhZ7oVqkW86A), which later [was uploaded](https://www.youtube.com/watch?v=nkgzLeNocb0) (important note for the future: this video is a result of live stream and not a "shot and uploaded" one). During cheering for Dan in real time I got curious about actual number of bounces he made.
+
+**And thus the quest begins**.
+
+As counting manually is error-prone and extremely boring, I decided to do this programmatically. The idea of solution is straightforward: somehow extract audio from the world record video, detect bounces (as they have distinctive sound) and count them.
+
+This post consists from two parts (if you just want to know a total count, skip right to [Epilogue](`r blogdown::shortcode(.name = "relref", '\"#epilogue\"', .type = "html")`)):
+
+- **Detecting** section describes technical details about how I approached the task of detecting bounces.
+- **Counting** section describes difficulties I had to overcome to produce a (reasonably accurate) count of bounces.
+
+For more technical details you can look at [this project's Git repository](https://github.com/echasnovski/curiosity-projects/tree/master/ttd-world-record).
+
+# Detecting
+
+Detecting was done in two steps: get audio of world record and detect bounces.
+
+I used the following tools on Ubuntu 18.04 (in order of their usage; Python packages probably best to be installed in a separate environment):
+
+- [you-get](https://github.com/soimort/you-get) to download video with the lowest video quality.
+- [ffmpeg](https://www.ffmpeg.org/) to extract audio from downloaded video and split it into 1 hour chunks (except the last one). Splitting was done because of insufficient amount of RAM I have in order to analyze the whole audio file. **Note** that having these splits means that some bounces on the joints between consecutive audio-chunks won't be detected.
+- [librosa](https://github.com/librosa/librosa) to detect beats that were in the period from 00:01:14 to 05:20:15 (times of first and last bounces). Timestamps of those beats were considered to be timestamps of bounces.
+
+# Counting
+
+So the total number of **detected** bounces is 49923 with an average tempo of ~156.5 bounces per minute. Ant **note** that this doesn't include possibly missing bounces due to splitting audio in 1 hour chunks, which introduced 5 joints between them.
+
+However, YouTube footage is not a "preshot and uploaded" one, but is a direct output of live stream. This resulted into some missing footage. Total time of record based on video footage is 5h19m1s (from 00:01:14 to 05:20:15 video timestamps). On the other hand, tablet, responsible for time tracking, shows total time of 5h21m4s (from 00:00:03 to 05:21:07 at corresponding video timestamps). So there is missing 2m3s of actual bouncing. They were results of video jumps due to, most probably, internet connection issues (I encourage everyone to believe in Dan's honesty):
+
+- [From 02:32:24 to 02:32:25](https://youtu.be/nkgzLeNocb0?t=9144) in footage time there is a jump in "tablet time" from 02:31:13 to 02:31:24. This is a gap of 10 seconds.
+- [From 02:32:41 to 02:32:42](https://youtu.be/nkgzLeNocb0?t=9161) - tablet jumps from 02:31:41 to 02:32:12. Gap of 30 seconds.
+- [From 02:49:17 to 02:49:18](https://youtu.be/nkgzLeNocb0?t=10157) - tablet jumps from 02:48:48 to 02:48:59. Gap of 10 seconds.
+- [From 02:49:29 to 02:49:30](https://youtu.be/nkgzLeNocb0?t=10169) - tablet jumps from 02:49:10 to 02:49:41. Gap of 30 seconds.
+- [From 02:55:29 to 02:55:30](https://youtu.be/nkgzLeNocb0?t=10529) - tablet jumps from 02:55:41 to 02:55:52. Gap of 10 seconds.
+- [From 02:55:37 to 02:55:38](https://youtu.be/nkgzLeNocb0?t=10537) - tablet jumps from 02:55:59 to 02:56:30. Gap of 30 seconds.
+- The rest 3 seconds seems to be the result of my rounding and possibly some very small jumps.
+
+Close video timestamps and systematic length of jumps are another indicators of internet connection issues.
+
+Knowing that there is 2m3s of footage missing and that average tempo was ~156.5 bounces per minute, we can add 321 bounces to detected ones.
+
+Finally, the **total number of bounces in Dan Ives world record can be estimated as 50244 bounces** (error should be less than 100 bounces for sure).
+
+**And thus the quest ends**.
+
+# Epilogue
+
+- Tools such as 'you-get', 'ffmpeg', and 'librosa' (and Python language in general) make a task as abstract as "count number of table tennis ball bounces in 5 and a half hour long YouTube video" reasonably easy.
+- During his 5 hours, 21 minutes, and 4 seconds of world record, Dan Ives made around 50244 bounces (with error less than 100 bounces in either side).
+
+`r blogdown::shortcode("spoiler_details", summary = '\"sessionInfo()\"')`
+
+```{r sessionInfo, eval = TRUE}
+sessionInfo()
+```
+
+`r blogdown::shortcode("/spoiler_details")`

@@ -1,0 +1,89 @@
+---
+title: Count bounces in table tennis world record
+author: Evgeni Chasnovski
+date: '2020-05-11'
+slug: count-bounces-in-table-tennis-world-record
+categories: []
+tags:
+  - python
+  - curiosity-project
+description: "On May 7th 2020 Daniel Ives set a new world record by continuously bouncing table tennis ball for 5 hours, 21 minutes, and 4 seconds. But how many bounces did he actually make?"
+---
+
+
+
+<div id="prologue" class="section level1">
+<h1>Prologue</h1>
+<p>Dan Ives is no stranger to participating in “prolonged” table tennis activities and capturing it on camera. He once <a href="https://www.youtube.com/watch?v=6mt4_8Rd5tg">said “table tennis” 100,000 times</a>, which took him about 15 hours. With his father Peter he also set a <a href="https://www.youtube.com/watch?v=cfp5SEV3Bns">world record for the longest table tennis rally</a> which lasted for 8 hours, 40 minutes, and 10 seconds (8h40m10s as a shorter description of time period).</p>
+<p>On May 7th 2020 Dan made a successful attempt to beat a world record for the <a href="https://www.guinnessworldrecords.com/world-records/table-tennis-bat-and-ball-control-duration?fb_comment_id=784092958310554_1433556316697545">longest duration to control a table tennis ball with a bat</a>. He surpassed current record duration of 5h2m37s by 18 minutes and 27 seconds for a total of 5h21m4s. He also live streamed the event on his <a href="https://www.youtube.com/channel/UC_368FANcHhkhZ7oVqkW86A">“TableTennisDaily” YouTube channel</a>, which later <a href="https://www.youtube.com/watch?v=nkgzLeNocb0">was uploaded</a> (important note for the future: this video is a result of live stream and not a “shot and uploaded” one). During cheering for Dan in real time I got curious about actual number of bounces he made.</p>
+<p><strong>And thus the quest begins</strong>.</p>
+<p>As counting manually is error-prone and extremely boring, I decided to do this programmatically. The idea of solution is straightforward: somehow extract audio from the world record video, detect bounces (as they have distinctive sound) and count them.</p>
+<p>This post consists from two parts (if you just want to know a total count, skip right to <a href="{{< relref "#epilogue" >}}">Epilogue</a>):</p>
+<ul>
+<li><strong>Detecting</strong> section describes technical details about how I approached the task of detecting bounces.</li>
+<li><strong>Counting</strong> section describes difficulties I had to overcome to produce a (reasonably accurate) count of bounces.</li>
+</ul>
+<p>For more technical details you can look at <a href="https://github.com/echasnovski/curiosity-projects/tree/master/ttd-world-record">this project’s Git repository</a>.</p>
+</div>
+<div id="detecting" class="section level1">
+<h1>Detecting</h1>
+<p>Detecting was done in two steps: get audio of world record and detect bounces.</p>
+<p>I used the following tools on Ubuntu 18.04 (in order of their usage; Python packages probably best to be installed in a separate environment):</p>
+<ul>
+<li><a href="https://github.com/soimort/you-get">you-get</a> to download video with the lowest video quality.</li>
+<li><a href="https://www.ffmpeg.org/">ffmpeg</a> to extract audio from downloaded video and split it into 1 hour chunks (except the last one). Splitting was done because of insufficient amount of RAM I have in order to analyze the whole audio file. <strong>Note</strong> that having these splits means that some bounces on the joints between consecutive audio-chunks won’t be detected.</li>
+<li><a href="https://github.com/librosa/librosa">librosa</a> to detect beats that were in the period from 00:01:14 to 05:20:15 (times of first and last bounces). Timestamps of those beats were considered to be timestamps of bounces.</li>
+</ul>
+</div>
+<div id="counting" class="section level1">
+<h1>Counting</h1>
+<p>So the total number of <strong>detected</strong> bounces is 49923 with an average tempo of ~156.5 bounces per minute. Ant <strong>note</strong> that this doesn’t include possibly missing bounces due to splitting audio in 1 hour chunks, which introduced 5 joints between them.</p>
+<p>However, YouTube footage is not a “preshot and uploaded” one, but is a direct output of live stream. This resulted into some missing footage. Total time of record based on video footage is 5h19m1s (from 00:01:14 to 05:20:15 video timestamps). On the other hand, tablet, responsible for time tracking, shows total time of 5h21m4s (from 00:00:03 to 05:21:07 at corresponding video timestamps). So there is missing 2m3s of actual bouncing. They were results of video jumps due to, most probably, internet connection issues (I encourage everyone to believe in Dan’s honesty):</p>
+<ul>
+<li><a href="https://youtu.be/nkgzLeNocb0?t=9144">From 02:32:24 to 02:32:25</a> in footage time there is a jump in “tablet time” from 02:31:13 to 02:31:24. This is a gap of 10 seconds.</li>
+<li><a href="https://youtu.be/nkgzLeNocb0?t=9161">From 02:32:41 to 02:32:42</a> - tablet jumps from 02:31:41 to 02:32:12. Gap of 30 seconds.</li>
+<li><a href="https://youtu.be/nkgzLeNocb0?t=10157">From 02:49:17 to 02:49:18</a> - tablet jumps from 02:48:48 to 02:48:59. Gap of 10 seconds.</li>
+<li><a href="https://youtu.be/nkgzLeNocb0?t=10169">From 02:49:29 to 02:49:30</a> - tablet jumps from 02:49:10 to 02:49:41. Gap of 30 seconds.</li>
+<li><a href="https://youtu.be/nkgzLeNocb0?t=10529">From 02:55:29 to 02:55:30</a> - tablet jumps from 02:55:41 to 02:55:52. Gap of 10 seconds.</li>
+<li><a href="https://youtu.be/nkgzLeNocb0?t=10537">From 02:55:37 to 02:55:38</a> - tablet jumps from 02:55:59 to 02:56:30. Gap of 30 seconds.</li>
+<li>The rest 3 seconds seems to be the result of my rounding and possibly some very small jumps.</li>
+</ul>
+<p>Close video timestamps and systematic length of jumps are another indicators of internet connection issues.</p>
+<p>Knowing that there is 2m3s of footage missing and that average tempo was ~156.5 bounces per minute, we can add 321 bounces to detected ones.</p>
+<p>Finally, the <strong>total number of bounces in Dan Ives world record can be estimated as 50244 bounces</strong> (error should be less than 100 bounces for sure).</p>
+<p><strong>And thus the quest ends</strong>.</p>
+</div>
+<div id="epilogue" class="section level1">
+<h1>Epilogue</h1>
+<ul>
+<li>Tools such as ‘you-get’, ‘ffmpeg’, and ‘librosa’ (and Python language in general) make a task as abstract as “count number of table tennis ball bounces in 5 and a half hour long YouTube video” reasonably easy.</li>
+<li>During his 5 hours, 21 minutes, and 4 seconds of world record, Dan Ives made around 50244 bounces (with error less than 100 bounces in either side).</li>
+</ul>
+{{% spoiler_details summary="sessionInfo()" %}}
+<pre class="r"><code>sessionInfo()</code></pre>
+<pre><code>## R version 4.0.0 (2020-04-24)
+## Platform: x86_64-pc-linux-gnu (64-bit)
+## Running under: Ubuntu 18.04.4 LTS
+## 
+## Matrix products: default
+## BLAS:   /usr/lib/x86_64-linux-gnu/openblas/libblas.so.3
+## LAPACK: /usr/lib/x86_64-linux-gnu/libopenblasp-r0.2.20.so
+## 
+## locale:
+##  [1] LC_CTYPE=ru_UA.UTF-8       LC_NUMERIC=C              
+##  [3] LC_TIME=ru_UA.UTF-8        LC_COLLATE=ru_UA.UTF-8    
+##  [5] LC_MONETARY=ru_UA.UTF-8    LC_MESSAGES=ru_UA.UTF-8   
+##  [7] LC_PAPER=ru_UA.UTF-8       LC_NAME=C                 
+##  [9] LC_ADDRESS=C               LC_TELEPHONE=C            
+## [11] LC_MEASUREMENT=ru_UA.UTF-8 LC_IDENTIFICATION=C       
+## 
+## attached base packages:
+## [1] stats     graphics  grDevices utils     datasets  methods   base     
+## 
+## loaded via a namespace (and not attached):
+##  [1] compiler_4.0.0  magrittr_1.5    bookdown_0.18   tools_4.0.0    
+##  [5] htmltools_0.4.0 yaml_2.2.1      Rcpp_1.0.4.6    stringi_1.4.6  
+##  [9] rmarkdown_2.1   blogdown_0.18   knitr_1.28      stringr_1.4.0  
+## [13] digest_0.6.25   xfun_0.13       rlang_0.4.6     evaluate_0.14</code></pre>
+{{% /spoiler_details %}}
+</div>
