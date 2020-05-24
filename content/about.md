@@ -5,7 +5,12 @@ type: about
 
 # Author
 
-My name is Evgeni Chasnovski. I am a mathematician from Kharkiv (Ukraine) with a strong passion for data analysis and [R](https://www.r-project.org/).
+My name is Evgeni Chasnovski. I am a mathematician and data scientist from Kharkiv (Ukraine) with a strong passion for data analysis, [R](https://www.r-project.org/), and [Python](https://www.python.org/).
+
+My CV:
+
+- [Version in English](/cv/EvgeniChasnovski.pdf).
+- [Version in Russian](/cv/EvgeniChasnovski_ru.pdf).
 
 My accounts:
 
